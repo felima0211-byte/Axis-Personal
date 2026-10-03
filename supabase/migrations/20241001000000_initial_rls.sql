@@ -17,7 +17,7 @@ as $$
     and exists (
       select 1 from auth.users u
       where u.id = auth.uid()
-        and u.email = current_setting('app.owner_email', true)
+        and u.email = 'felima0211@gmail.com'
     );
 $$;
 
