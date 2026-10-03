@@ -66,3 +66,21 @@ export async function checkApiRateLimit(userId: string) {
   const result = await apiRatelimit.limit(key)
   return { success: result.success, remaining: result.remaining, reset: result.reset }
 }
+
+/**
+ * Generic rate limiter used by the API layer (fatias 3-5).
+ * Returns { success, retryAfter } where retryAfter is seconds until reset.
+ */
+export async function rateLimit(
+  key: string,
+  perMinute: number
+): Promise<{ success: boolean; retryAfter?: number }> {
+  const r = getRedis()
+  if (!r) {
+    const result = await memoryLimit(key, perMinute, 60 * 1000)
+    return { success: result.success, retryAfter: result.success ? undefined : Math.ceil((result.reset - Date.now()) / 1000) }
+  }
+  const limiter = new Ratelimit({ redis: r, limiter: Ratelimit.slidingWindow(perMinute, '1 m') })
+  const result = await limiter.limit(key)
+  return { success: result.success, retryAfter: result.success ? undefined : Math.ceil((result.reset - Date.now()) / 1000) }
+}

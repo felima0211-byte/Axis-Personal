@@ -16,6 +16,11 @@ const serverSchema = z.object({
   ENCRYPTION_KEYS: z.string().optional(),
   ENCRYPTION_ACTIVE_VERSION: z.string().optional(),
   BLIND_INDEX_KEY: z.string().optional(),
+  // AI / Ingest (Parte 5)
+  ANTHROPIC_API_KEY: z.string().min(20).optional(),
+  ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-5'),
+  INGEST_DAILY_LIMIT: z.coerce.number().int().positive().default(50),
+  APP_TIMEZONE: z.string().default('America/Sao_Paulo'),
 })
 
 function validateClient() {
@@ -43,6 +48,10 @@ function validateServer() {
     ENCRYPTION_KEYS: process.env.ENCRYPTION_KEYS,
     ENCRYPTION_ACTIVE_VERSION: process.env.ENCRYPTION_ACTIVE_VERSION,
     BLIND_INDEX_KEY: process.env.BLIND_INDEX_KEY,
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+    ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
+    INGEST_DAILY_LIMIT: process.env.INGEST_DAILY_LIMIT,
+    APP_TIMEZONE: process.env.APP_TIMEZONE,
   })
   if (!parsed.success) {
     console.error('❌ Missing server environment variables:')
@@ -61,4 +70,8 @@ export const env = {
   get SUPABASE_SERVICE_ROLE_KEY() { return validateServer().SUPABASE_SERVICE_ROLE_KEY },
   get UPSTASH_REDIS_REST_URL() { return validateServer().UPSTASH_REDIS_REST_URL },
   get UPSTASH_REDIS_REST_TOKEN() { return validateServer().UPSTASH_REDIS_REST_TOKEN },
+  get ANTHROPIC_API_KEY() { return validateServer().ANTHROPIC_API_KEY! },
+  get ANTHROPIC_MODEL() { return validateServer().ANTHROPIC_MODEL },
+  get INGEST_DAILY_LIMIT() { return validateServer().INGEST_DAILY_LIMIT },
+  get APP_TIMEZONE() { return validateServer().APP_TIMEZONE },
 }
