@@ -9,11 +9,8 @@ function getRedis(): Redis | null {
   const url = process.env.UPSTASH_REDIS_REST_URL
   const token = process.env.UPSTASH_REDIS_REST_TOKEN
   if (!url || !token) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error('Upstash Redis not configured in production')
-    }
     if (!isDevFallback) {
-      console.warn('[rate-limit] Upstash not configured — using in-memory fallback (dev only)')
+      console.warn('[rate-limit] Upstash not configured — using in-memory fallback')
       isDevFallback = true
     }
     return null
