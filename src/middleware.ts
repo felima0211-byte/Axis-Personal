@@ -14,10 +14,10 @@ function securityHeaders(response: NextResponse): NextResponse {
     [
       "default-src 'self'",
       `connect-src 'self' ${process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''} https://*.supabase.co wss://*.supabase.co`,
-      "script-src 'self'",
-      "style-src 'self' 'unsafe-inline'",
-      "img-src 'self' data:",
-      "font-src 'self'",
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+      "img-src 'self' data: blob:",
+      "font-src 'self' https://fonts.gstatic.com",
       "frame-ancestors 'none'",
     ].join('; ')
   )
