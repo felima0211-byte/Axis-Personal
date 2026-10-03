@@ -8,6 +8,7 @@ export const GET = route({ query: taskListQuery }, ({ db, query }) =>
     {
       status: query.status,
       priority: query.priority,
+      projectId: query.project_id,
       sectionId: query.section_id,
       requesterId: query.requester_id,
       dueFrom: query.due_from,
@@ -18,7 +19,7 @@ export const GET = route({ query: taskListQuery }, ({ db, query }) =>
 )
 
 export const POST = route({ body: taskCreate, status: 201 }, async ({ db, body, audit }) => {
-  const t = await tasksRepo.create(db, body)
+  const t = await tasksRepo.create(db, { ...body, projectId: body.projectId ?? null })
   audit({ action: 'task.create', entity: 'task', entityId: t.id })
   return t
 })

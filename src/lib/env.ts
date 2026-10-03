@@ -16,11 +16,20 @@ const serverSchema = z.object({
   ENCRYPTION_KEYS: z.string().optional(),
   ENCRYPTION_ACTIVE_VERSION: z.string().optional(),
   BLIND_INDEX_KEY: z.string().optional(),
-  // AI / Ingest (Parte 5)
+  // AI / Ingest (Parte 5) — API desativada, mantida por compatibilidade
   ANTHROPIC_API_KEY: z.string().min(20).optional(),
   ANTHROPIC_MODEL: z.string().default('claude-sonnet-4-5'),
   INGEST_DAILY_LIMIT: z.coerce.number().int().positive().default(50),
   APP_TIMEZONE: z.string().default('America/Sao_Paulo'),
+  // Google OAuth (Parte 7)
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_REDIRECT_URI: z.string().url().optional(),
+  // Files / Cron (Parte 7)
+  CRON_SECRET: z.string().min(16).optional(),
+  SHEETS_MAX_ROWS: z.coerce.number().int().positive().default(5000),
+  SHEETS_MAX_COLS: z.coerce.number().int().positive().default(30),
+  UPLOAD_MAX_MB: z.coerce.number().int().positive().default(25),
 })
 
 function validateClient() {
@@ -52,6 +61,13 @@ function validateServer() {
     ANTHROPIC_MODEL: process.env.ANTHROPIC_MODEL,
     INGEST_DAILY_LIMIT: process.env.INGEST_DAILY_LIMIT,
     APP_TIMEZONE: process.env.APP_TIMEZONE,
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    GOOGLE_CLIENT_SECRET: process.env.GOOGLE_CLIENT_SECRET,
+    GOOGLE_REDIRECT_URI: process.env.GOOGLE_REDIRECT_URI,
+    CRON_SECRET: process.env.CRON_SECRET,
+    SHEETS_MAX_ROWS: process.env.SHEETS_MAX_ROWS,
+    SHEETS_MAX_COLS: process.env.SHEETS_MAX_COLS,
+    UPLOAD_MAX_MB: process.env.UPLOAD_MAX_MB,
   })
   if (!parsed.success) {
     console.error('❌ Missing server environment variables:')
@@ -74,4 +90,11 @@ export const env = {
   get ANTHROPIC_MODEL() { return validateServer().ANTHROPIC_MODEL },
   get INGEST_DAILY_LIMIT() { return validateServer().INGEST_DAILY_LIMIT },
   get APP_TIMEZONE() { return validateServer().APP_TIMEZONE },
+  get GOOGLE_CLIENT_ID() { return validateServer().GOOGLE_CLIENT_ID },
+  get GOOGLE_CLIENT_SECRET() { return validateServer().GOOGLE_CLIENT_SECRET },
+  get GOOGLE_REDIRECT_URI() { return validateServer().GOOGLE_REDIRECT_URI },
+  get CRON_SECRET() { return validateServer().CRON_SECRET },
+  get SHEETS_MAX_ROWS() { return validateServer().SHEETS_MAX_ROWS },
+  get SHEETS_MAX_COLS() { return validateServer().SHEETS_MAX_COLS },
+  get UPLOAD_MAX_MB() { return validateServer().UPLOAD_MAX_MB },
 }

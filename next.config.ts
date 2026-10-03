@@ -4,6 +4,9 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? ''
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  async rewrites() {
+    return [{ source: '/favicon.ico', destination: '/brand/icon-512.png' }]
+  },
   async headers() {
     return [
       {

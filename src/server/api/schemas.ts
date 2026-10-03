@@ -57,6 +57,7 @@ export const requesterListQuery = z.object({
 export const taskCreate = z.object({
   title: z.string().trim().min(1).max(200),
   description: z.string().max(4000).nullish(),
+  projectId: uuid.nullish(),
   sectionId: uuid.nullish(),
   requesterId: uuid.nullish(),
   priority: priorityEnum.optional(),
@@ -71,6 +72,7 @@ export const taskListQuery = z.object({
   ...page,
   status: csv(statusEnum).optional(),
   priority: csv(priorityEnum).optional(),
+  project_id: uuid.optional(),
   section_id: uuid.optional(),
   requester_id: uuid.optional(),
   due_from: iso.optional(),
@@ -105,11 +107,13 @@ export const reminderListQuery = z.object({
 // mensagens e ingestão
 export const messageListQuery = z.object({
   ...page,
+  project_id: uuid.optional(),
   requester_id: uuid.optional(),
   extraction_status: z.enum(['pending_extraction', 'extracted', 'failed']).optional(),
 })
 export const ingestBody = z.object({
   text: z.string().min(1).max(20_000),
+  projectId: uuid.optional(),
   requesterId: uuid.optional(),
   requesterName: z.string().trim().min(1).max(120).optional(),
   sectionId: uuid.optional(),

@@ -2,6 +2,7 @@
 import { useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
+import Image from 'next/image'
 
 type Step = 'credentials' | 'mfa-enroll' | 'mfa-verify'
 
@@ -37,10 +38,7 @@ function LoginForm() {
         body: JSON.stringify({ email, password }),
       })
       const data = await res.json()
-      if (!res.ok) {
-        setError(data.error ?? 'Erro ao fazer login')
-        return
-      }
+      if (!res.ok) { setError(data.error ?? 'Erro ao fazer login'); return }
       if (data.requiresMfa) {
         setState({
           step: data.isEnrollment ? 'mfa-enroll' : 'mfa-verify',
@@ -65,124 +63,80 @@ function LoginForm() {
       const res = await fetch('/api/auth/mfa', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          factorId: state.factorId,
-          challengeId: state.challengeId,
-          code: totpCode,
-        }),
+        body: JSON.stringify({ factorId: state.factorId, challengeId: state.challengeId, code: totpCode }),
       })
       const data = await res.json()
-      if (!res.ok) {
-        setError(data.error ?? 'Código inválido')
-        return
-      }
+      if (!res.ok) { setError(data.error ?? 'Código inválido'); return }
       router.replace('/dashboard')
     } finally {
       setLoading(false)
     }
   }
 
+  const inputCls = 'w-full h-11 rounded-lg border border-[var(--border)] bg-[rgba(255,255,255,0.05)] px-4 text-sm text-white placeholder:text-[var(--text-3)] focus:outline-none focus:border-[var(--accent-cyan)] transition-colors'
+  const btnCls = 'w-full h-11 rounded-lg bg-white text-black font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-50 cursor-pointer'
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-950">
-      <div className="w-full max-w-sm space-y-6 p-8 bg-gray-900 rounded-2xl shadow-xl">
-        <h1 className="text-2xl font-bold text-white text-center">Axis Personal</h1>
-
-        {unauthorized && (
-          <p className="text-red-400 text-sm text-center">Acesso não autorizado.</p>
-        )}
-        {mfaRequired && (
-          <p className="text-yellow-400 text-sm text-center">MFA obrigatório.</p>
-        )}
-        {error && <p className="text-red-400 text-sm text-center">{error}</p>}
-
-        {state.step === 'credentials' && (
-          <form onSubmit={handleLogin} className="space-y-4">
-            <input
-              type="email"
-              placeholder="E-mail"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full px-4 py-2 rounded-lg bg-gray-800 text-white border border-gray-700 focus:outline-none focus:border-blue-500"
-            />
-            <input
-              type="password"
-              placeholder="Senha"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              className="w-full px-4 py-2 rounded-lg bg-gray-800 text-white border border-gray-700 focus:outline-none focus:border-blue-500"
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
-            >
-              {loading ? 'Entrando...' : 'Entrar'}
-            </button>
-          </form>
-        )}
-
-        {state.step === 'mfa-enroll' && (
-          <div className="space-y-4">
-            <p className="text-gray-300 text-sm text-center">
-              Configure seu autenticador. Escaneie o QR code com Google Authenticator ou similar.
-            </p>
-            {state.qrCode && (
-              <div className="flex justify-center">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={state.qrCode} alt="QR Code MFA" className="w-40 h-40 rounded-lg" />
-              </div>
-            )}
-            {state.secret && (
-              <p className="text-xs text-gray-500 text-center break-all">
-                Chave manual: <span className="font-mono text-gray-400">{state.secret}</span>
-              </p>
-            )}
-            <form onSubmit={handleMfa} className="space-y-4">
-              <input
-                type="text"
-                placeholder="Código TOTP (6 dígitos)"
-                value={totpCode}
-                onChange={(e) => setTotpCode(e.target.value)}
-                required
-                maxLength={6}
-                className="w-full px-4 py-2 rounded-lg bg-gray-800 text-white border border-gray-700 focus:outline-none focus:border-blue-500 text-center tracking-widest text-xl"
-              />
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
-              >
-                {loading ? 'Verificando...' : 'Confirmar'}
-              </button>
-            </form>
+    <div className="min-h-screen flex items-center justify-center bg-black px-4">
+      {/* Card with iridescent border */}
+      <div className="iridescent-border w-full max-w-sm">
+        <div className="bg-[var(--surface-1)] rounded-xl px-8 py-10 space-y-6">
+          {/* Logo */}
+          <div className="flex flex-col items-center gap-4">
+            <Image src="/brand/icon-512.png" alt="Axis" width={80} height={80} priority />
+            <div className="text-center">
+              <div className="text-2xl font-bold tracking-widest text-white">AXIS</div>
+              <div className="font-mono text-xs text-[var(--text-3)] mt-0.5">Personal</div>
+            </div>
           </div>
-        )}
 
-        {state.step === 'mfa-verify' && (
-          <form onSubmit={handleMfa} className="space-y-4">
-            <p className="text-gray-300 text-sm text-center">
-              Digite o código do seu autenticador.
-            </p>
-            <input
-              type="text"
-              placeholder="Código TOTP (6 dígitos)"
-              value={totpCode}
-              onChange={(e) => setTotpCode(e.target.value)}
-              required
-              maxLength={6}
-              className="w-full px-4 py-2 rounded-lg bg-gray-800 text-white border border-gray-700 focus:outline-none focus:border-blue-500 text-center tracking-widest text-xl"
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-semibold disabled:opacity-50"
-            >
-              {loading ? 'Verificando...' : 'Verificar'}
-            </button>
-          </form>
-        )}
+          {/* Brand phrase */}
+          <p className="font-mono text-[11px] text-[var(--text-3)] text-center leading-relaxed">
+            Do latim <em>eixo, centro</em>: ponto de equilíbrio e sustentação.
+          </p>
+
+          {/* Alerts */}
+          {unauthorized && <p className="text-xs text-center text-[var(--danger)]">Acesso não autorizado.</p>}
+          {mfaRequired && <p className="text-xs text-center text-[var(--warning)]">MFA obrigatório.</p>}
+          {error && <p className="text-xs text-center text-[var(--danger)]">{error}</p>}
+
+          {state.step === 'credentials' && (
+            <form onSubmit={handleLogin} className="space-y-3">
+              <input type="email" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} required className={inputCls} />
+              <input type="password" placeholder="Senha" value={password} onChange={(e) => setPassword(e.target.value)} required className={inputCls} />
+              <button type="submit" disabled={loading} className={btnCls}>{loading ? 'Entrando...' : 'Entrar'}</button>
+            </form>
+          )}
+
+          {state.step === 'mfa-enroll' && (
+            <div className="space-y-4">
+              <p className="text-xs text-[var(--text-2)] text-center">Configure seu autenticador. Escaneie o QR code.</p>
+              {state.qrCode && (
+                <div className="flex justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={state.qrCode} alt="QR Code MFA" className="w-40 h-40 rounded-lg border border-[var(--border)]" />
+                </div>
+              )}
+              {state.secret && (
+                <p className="text-[10px] text-[var(--text-3)] text-center break-all">
+                  Chave: <span className="font-mono text-[var(--text-2)]">{state.secret}</span>
+                </p>
+              )}
+              <form onSubmit={handleMfa} className="space-y-3">
+                <input type="text" placeholder="Código TOTP" value={totpCode} onChange={(e) => setTotpCode(e.target.value)} required maxLength={6} className={`${inputCls} text-center tracking-[0.5em] text-lg`} />
+                <button type="submit" disabled={loading} className={btnCls}>{loading ? 'Verificando...' : 'Confirmar'}</button>
+              </form>
+            </div>
+          )}
+
+          {state.step === 'mfa-verify' && (
+            <form onSubmit={handleMfa} className="space-y-3">
+              <p className="text-xs text-[var(--text-2)] text-center">Digite o código do autenticador.</p>
+              <input type="text" placeholder="000000" value={totpCode} onChange={(e) => setTotpCode(e.target.value)} required maxLength={6} className={`${inputCls} text-center tracking-[0.5em] text-lg`} />
+              <button type="submit" disabled={loading} className={btnCls}>{loading ? 'Verificando...' : 'Verificar'}</button>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   )

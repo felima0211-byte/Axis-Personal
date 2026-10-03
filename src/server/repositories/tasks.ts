@@ -8,6 +8,7 @@ const T = 'tasks'
 
 export type Task = {
   id: string
+  projectId: string | null
   sectionId: string | null
   requesterId: string | null
   messageId: string | null
@@ -26,6 +27,7 @@ export type Task = {
 export type TaskFilters = {
   status?: TaskStatus[]
   priority?: Priority[]
+  projectId?: string
   sectionId?: string
   requesterId?: string
   messageId?: string
@@ -37,6 +39,7 @@ export type TaskFilters = {
 export type TaskInput = {
   title: string
   description?: string | null
+  projectId?: string | null
   sectionId?: string | null
   requesterId?: string | null
   messageId?: string | null
@@ -54,6 +57,7 @@ export type TaskPatch = Partial<
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const map = (r: any): Task => ({
   id: r.id,
+  projectId: r.project_id ?? null,
   sectionId: r.section_id,
   requesterId: r.requester_id,
   messageId: r.message_id,
@@ -74,6 +78,7 @@ function applyFilters<Q>(q: Q, f: TaskFilters): Q {
   let r: any = q
   if (f.status?.length) r = r.in('status', f.status)
   if (f.priority?.length) r = r.in('priority', f.priority)
+  if (f.projectId) r = r.eq('project_id', f.projectId)
   if (f.sectionId) r = r.eq('section_id', f.sectionId)
   if (f.requesterId) r = r.eq('requester_id', f.requesterId)
   if (f.messageId) r = r.eq('message_id', f.messageId)
@@ -98,6 +103,7 @@ export const tasksRepo = {
         title_enc: enc(T, 'title', i.title),
         description_enc: encN(T, 'description', i.description),
         source_excerpt_enc: encN(T, 'source_excerpt', i.sourceExcerpt),
+        project_id: i.projectId ?? null,
         section_id: i.sectionId ?? null,
         requester_id: i.requesterId ?? null,
         message_id: i.messageId ?? null,
