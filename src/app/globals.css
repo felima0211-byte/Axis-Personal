@@ -1,10 +1,5 @@
 @import "tailwindcss";
 
-@theme inline {
-  --font-sans: var(--font-inter);
-  --font-mono: var(--font-jetbrains-mono);
-}
-
 :root[data-theme='dark'] {
   --bg: #000000;
   --surface-1: #0b0b0e;
@@ -24,7 +19,6 @@
   --iridescent: linear-gradient(135deg, #4da9f5 0%, #a58bdf 55%, #e9a6f0 100%);
   --focus: 0 0 0 2px #000, 0 0 0 4px #6ec1e4;
 }
-
 :root[data-theme='light'] {
   --bg: #f7f7f5;
   --surface-1: #ffffff;
@@ -45,42 +39,12 @@
   --focus: 0 0 0 2px #fff, 0 0 0 4px #1c86ad;
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html {
-  font-size: 14px;
-}
-
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { font-size: 14px; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-sans, Inter, system-ui, sans-serif);
+  font-family: system-ui, -apple-system, 'Inter', sans-serif;
   -webkit-font-smoothing: antialiased;
-  min-height: 100vh;
 }
-
-@media (prefers-reduced-motion: reduce) {
-  *, *::before, *::after {
-    animation-duration: 0.01ms !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
-:focus-visible {
-  outline: none;
-  box-shadow: var(--focus);
-  border-radius: 4px;
-}
-
-/* Iridescent border utility */
-.iridescent-border {
-  background: var(--iridescent);
-  padding: 1px;
-  border-radius: 13px;
-}
-
-.iridescent-border > * {
-  border-radius: 12px;
-}
+.mono { font-family: 'JetBrains Mono', 'Menlo', monospace; }

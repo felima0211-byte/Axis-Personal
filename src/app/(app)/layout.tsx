@@ -1,9 +1,10 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { AppShell } from '@/components/layout/AppShell'
 
-export default async function RootPage() {
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
   const { data: { session } } = await supabase.auth.getSession()
   if (!session) redirect('/login')
-  redirect('/dashboard')
+  return <AppShell>{children}</AppShell>
 }

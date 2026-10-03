@@ -1,25 +1,20 @@
-import { route } from '@/server/api/route'
-import { idParam, taskPatch } from '@/server/api/schemas'
-import { tasksRepo } from '@/server/repositories/tasks'
+import { NextResponse } from 'next/server'
+import { getUser } from '@/lib/auth'
 
-export const GET = route({ params: idParam }, ({ db, params }) => tasksRepo.get(db, params.id))
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const { user, supabase, error } = await getUser()
+  if (!user) return error
+  const body = await req.json()
+  const { data, error: dbErr } = await supabase.from('tasks').update(body).eq('id', id).eq('user_id', user.id).select().single()
+  if (dbErr) return NextResponse.json({ error: dbErr.message }, { status: 500 })
+  return NextResponse.json(data)
+}
 
-export const PATCH = route(
-  { params: idParam, body: taskPatch },
-  async ({ db, params, body, audit }) => {
-    const t = await tasksRepo.update(db, params.id, body)
-    audit({
-      action: 'task.update',
-      entity: 'task',
-      entityId: t.id,
-      metadata: { status: t.status },
-    })
-    return t
-  },
-)
-
-export const DELETE = route({ params: idParam }, async ({ db, params, audit }) => {
-  const t = await tasksRepo.archive(db, params.id)
-  audit({ action: 'task.archive', entity: 'task', entityId: t.id })
-  return t
-})
+export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const { user, supabase, error } = await getUser()
+  if (!user) return error
+  await supabase.from('tasks').update({ status: 'archived' }).eq('id', id).eq('user_id', user.id)
+  return NextResponse.json({ ok: true })
+}

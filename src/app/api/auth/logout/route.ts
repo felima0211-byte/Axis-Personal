@@ -1,8 +1,14 @@
+import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import { createSupabaseServerClient } from '@/lib/supabase/server'
 
 export async function POST() {
-  const supabase = await createSupabaseServerClient()
+  const supabase = await createClient()
+  await supabase.auth.signOut()
+  return NextResponse.redirect(new URL('/login', process.env.NEXT_PUBLIC_SUPABASE_URL!.replace('supabase.co', 'vercel.app')))
+}
+
+export async function GET() {
+  const supabase = await createClient()
   await supabase.auth.signOut()
   return NextResponse.json({ ok: true })
 }
