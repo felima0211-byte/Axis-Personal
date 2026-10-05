@@ -931,14 +931,17 @@ function renderProjectConversations() {
 
 // ── TASK TOGGLE / ADD / EDIT ──
 function toggleTask(id) {
+  state = STORE.load()
   const task = state.tasks.find(t=>t.id===id); if(!task)return
-  task.status = task.status==='done'?'confirmed':'done'
+  task.status = task.status==='done'?'open':'done'
   STORE.save('tasks',state.tasks)
+  const screen = document.querySelector('.screen.active')?.id
+  if (screen==='screen-today') { renderToday(); updateTodayBanner(); return }
   const activeTab = document.querySelector('.tab-content.active')?.id
   if (activeTab==='tab-overview') renderProjectOverview()
   else if (activeTab==='tab-tasks') renderProjectTasks()
-  else { state=STORE.load(); renderDashboard() }
-  updateTodayBanner(); }
+  updateTodayBanner()
+}
 
 function addTaskInline() {
   const input = document.getElementById('new-task-input')
@@ -1137,8 +1140,8 @@ function taskSimpleHTML(task) {
   const prioClass={urgent:'prio-urgent',high:'prio-high',normal:'prio-normal',low:'prio-low'}[task.priority]||'prio-normal'
   const prioLabel={urgent:'urgente',high:'alta',normal:'normal',low:'baixa'}[task.priority]||''
   const now=new Date().toISOString(); const isLate=task.due_at&&task.due_at<now&&!isDone
-  return `<div class="task-item">
-    <div class="task-check ${isDone?'done':''}" onclick="toggleTask('${task.id}')">${isDone?'✓':''}</div>
+  return `<div class="task-item" onclick="openTaskEdit('${task.id}')">
+    <div class="task-check ${isDone?'done':''}" onclick="event.stopPropagation();toggleTask('${task.id}')">${isDone?'✓':''}</div>
     <span class="task-title-text ${isDone?'done-text':''}">${esc(task.title)}</span>
     <div class="task-meta">
       ${task.due_at?`<span style="${isLate?'color:var(--danger)':''}">${fmtDate(task.due_at)}</span>`:''}
