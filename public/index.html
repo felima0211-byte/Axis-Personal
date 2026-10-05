@@ -77,6 +77,12 @@ body::before{content:'';position:fixed;inset:0;background:url('axis-bg.png') cen
 .sub-proj-list{display:flex;flex-direction:column;gap:3px;border-top:1px solid var(--border);padding-top:10px;margin-top:4px}
 .sub-proj-item{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:6px;font-size:12px;color:var(--text-2);transition:background 120ms}
 .sub-proj-item:hover{background:var(--surface-2);color:var(--text)}
+.proj-card.drag-over{border-color:var(--accent-cyan)!important;background:rgba(110,193,228,.1)!important;box-shadow:0 0 0 2px rgba(110,193,228,.35)}
+.proj-card[draggable=true]{cursor:grab}
+.proj-card[draggable=true]:active{cursor:grabbing}
+.root-drop-zone{display:none;grid-column:1/-1;border:2px dashed var(--border-strong);border-radius:12px;padding:12px;text-align:center;font-size:12px;color:var(--text-3);transition:all 150ms;user-select:none}
+.root-drop-zone.drag-over{border-color:var(--accent-cyan);color:var(--accent-cyan);background:rgba(110,193,228,.06)}
+body.is-dragging .root-drop-zone{display:block}
 .proj-card-header{display:flex;align-items:center;gap:10px}
 .proj-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .proj-name{font-weight:600;font-size:14px}
@@ -583,12 +589,38 @@ function renderDashboard() {
 
 let draggedProjectId = null
 
+function clearDragState() {
+  draggedProjectId = null
+  document.body.classList.remove('is-dragging')
+  document.querySelectorAll('.proj-card.drag-over, .root-drop-zone.drag-over').forEach(el => el.classList.remove('drag-over'))
+  document.querySelectorAll('.proj-card.dragging-src').forEach(el => { el.classList.remove('dragging-src'); el.style.opacity = '' })
+}
+
 function renderProjects() {
   const grid = document.getElementById('proj-grid')
   const allActive = state.projects.filter(p => p.status === currentFilter)
   const roots = allActive.filter(p => !p.parent_id)
   const children = allActive.filter(p => !!p.parent_id)
   grid.innerHTML = ''
+
+  // zona de drop para remover do pai — visível só durante drag
+  const rootZone = document.createElement('div')
+  rootZone.className = 'root-drop-zone'
+  rootZone.textContent = '↑ Solte aqui para transformar em projeto raiz'
+  rootZone.addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect='move'; rootZone.classList.add('drag-over') })
+  rootZone.addEventListener('dragleave', e => { if (!rootZone.contains(e.relatedTarget)) rootZone.classList.remove('drag-over') })
+  rootZone.addEventListener('drop', e => {
+    e.preventDefault()
+    const src = e.dataTransfer.getData('text/plain') || draggedProjectId
+    rootZone.classList.remove('drag-over')
+    if (src) {
+      state = STORE.load()
+      const proj = state.projects.find(x => x.id === src)
+      if (proj) { proj.parent_id = null; STORE.save('projects', state.projects) }
+    }
+    clearDragState(); renderDashboard()
+  })
+  grid.appendChild(rootZone)
 
   if (!roots.length && !children.length) {
     const e = document.createElement('div')
@@ -622,7 +654,48 @@ function buildProjectCard(p, allChildren) {
   const card = document.createElement('div')
   card.className = 'proj-card'
   card.dataset.id = p.id
-  card.addEventListener('click', () => openProject(p.id))
+  card.draggable = true
+
+  card.addEventListener('dragstart', e => {
+    draggedProjectId = p.id
+    // Safari EXIGE setData — sem isso o drag não inicia
+    e.dataTransfer.setData('text/plain', p.id)
+    e.dataTransfer.effectAllowed = 'move'
+    // adia opacity para captura do ghost image ser limpa
+    setTimeout(() => { card.classList.add('dragging-src'); card.style.opacity = '0.4' }, 0)
+    document.body.classList.add('is-dragging')
+  })
+
+  card.addEventListener('dragend', () => clearDragState())
+
+  card.addEventListener('dragover', e => {
+    e.preventDefault() // obrigatório para aceitar drop
+    e.dataTransfer.dropEffect = 'move'
+    if (draggedProjectId && draggedProjectId !== p.id) {
+      card.classList.add('drag-over')
+    }
+  })
+
+  card.addEventListener('dragleave', e => {
+    // só remove se o mouse saiu realmente do card (não de um filho)
+    if (!card.contains(e.relatedTarget)) card.classList.remove('drag-over')
+  })
+
+  card.addEventListener('drop', e => {
+    e.preventDefault()
+    e.stopPropagation()
+    const src = e.dataTransfer.getData('text/plain') || draggedProjectId
+    card.classList.remove('drag-over')
+    if (src && src !== p.id && !isAncestor(src, p.id)) {
+      state = STORE.load()
+      const proj = state.projects.find(x => x.id === src)
+      if (proj) { proj.parent_id = p.id; STORE.save('projects', state.projects) }
+    }
+    clearDragState()
+    renderDashboard()
+  })
+
+  card.addEventListener('click', () => { if (!draggedProjectId) openProject(p.id) })
 
   const subsHTML = subs.length ? `
     <div class="sub-proj-list" onclick="event.stopPropagation()">
@@ -656,25 +729,6 @@ function buildProjectCard(p, allChildren) {
   return card
 }
 
-function dropOnProject(targetId) {
-  if (!draggedProjectId || draggedProjectId === targetId) return
-  state = STORE.load()
-  // impede nesting circular
-  if (isAncestor(draggedProjectId, targetId)) return
-  const p = state.projects.find(x => x.id === draggedProjectId); if (!p) return
-  p.parent_id = targetId
-  STORE.save('projects', state.projects)
-  renderDashboard()
-}
-
-function dropToRoot() {
-  if (!draggedProjectId) return
-  state = STORE.load()
-  const p = state.projects.find(x => x.id === draggedProjectId); if (!p) return
-  p.parent_id = null
-  STORE.save('projects', state.projects)
-  renderDashboard()
-}
 
 function isAncestor(candidateId, targetId) {
   // retorna true se candidateId é ancestral de targetId (evita loops)
