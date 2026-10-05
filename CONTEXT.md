@@ -121,3 +121,6 @@ Salvos com `kind:'link'`, `url:'...'`, `data:null`. Render checa `doc.kind==='li
 ## Histórico de commits recentes
 
 <!-- AUTO-UPDATED BELOW -->
+- `91567ed` · 2026-10-05 06:16 — fix: drag-and-drop com suporte correto ao Safari
+- `b349740` · 2026-10-05 06:14 — fix: botão + Sub-projeto funcional; remove drag-and-drop (não suportado no Safari)
+- `7682ba5` · 2026-10-05 06:10 — feat: sub-projetos com drag-and-drop e hierarquia pai/filho

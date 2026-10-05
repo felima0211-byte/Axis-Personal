@@ -827,22 +827,59 @@ function taskTableHTML(tasks) {
 function renderProjectOverview() {
   const el = document.getElementById('tab-overview')
   const now = new Date().toISOString()
+  state = STORE.load()
   const tasks = state.tasks.filter(t => t.project_id===currentProjectId && t.status!=='archived')
   const overdue = tasks.filter(t => t.due_at && t.due_at<now && t.status!=='done')
   const open = tasks.filter(t => t.status!=='done')
   const done = tasks.filter(t => t.status==='done')
   const msgs = state.messages.filter(m => m.project_id===currentProjectId)
+  const subs = state.projects.filter(p => p.parent_id===currentProjectId && p.status!=='archived')
+
   document.getElementById('proj-detail-meta').textContent =
-    `${open.length} abertas · ${done.length} concluídas · ${msgs.length} conversa${msgs.length!==1?'s':''}`
+    `${open.length} abertas · ${done.length} concluídas · ${msgs.length} conversa${msgs.length!==1?'s':''}${subs.length?` · ${subs.length} sub-projeto${subs.length!==1?'s':''}`:''}`
   const late = document.getElementById('proj-detail-late')
   if (overdue.length){late.textContent=`${overdue.length} atrasada${overdue.length>1?'s':''}`;late.style.display=''}
   else late.style.display='none'
-  let html=''
+
+  let html = ''
+
+  // ── Sub-projetos ──
+  if (subs.length) {
+    const subsRows = subs.map(s => {
+      const st = state.tasks.filter(t=>t.project_id===s.id&&t.status!=='archived')
+      const sOpen = st.filter(t=>t.status!=='done').length
+      const sDone = st.filter(t=>t.status==='done').length
+      const sTotal = st.length
+      const sProg = sTotal>0?Math.round((sDone/sTotal)*100):0
+      const sOver = st.filter(t=>t.due_at&&t.due_at<now&&t.status!=='done').length
+      return `<div onclick="openProject('${s.id}')" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:background 120ms;border:1px solid var(--border)" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background=''">
+        <div style="width:10px;height:10px;border-radius:50%;background:${s.color};flex-shrink:0"></div>
+        <span style="flex:1;font-weight:600;font-size:13px">${esc(s.name)}</span>
+        <span style="font-size:11px;color:var(--text-3)">${sOpen} aberta${sOpen!==1?'s':''}</span>
+        ${sOver>0?`<span style="font-size:11px;color:var(--danger)">${sOver} atrasada${sOver!==1?'s':''}</span>`:''}
+        <div style="width:60px;height:4px;background:var(--surface-3);border-radius:2px;flex-shrink:0"><div style="height:4px;border-radius:2px;background:${s.color};width:${sProg}%"></div></div>
+        <span style="font-size:11px;color:var(--text-3);font-family:monospace">${sProg}%</span>
+        <span style="color:var(--text-3);font-size:12px">→</span>
+      </div>`
+    }).join('')
+
+    html += `<div style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div class="group-label"><div class="group-dot" style="background:var(--accent-violet)"></div>Sub-projetos</div>
+        <button class="btn-sm" onclick="openSubProjectDialog()" style="font-size:11px">+ Novo sub-projeto</button>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">${subsRows}</div>
+    </div>
+    <div style="border-top:1px solid var(--border);margin-bottom:16px"></div>`
+  }
+
+  // ── Tarefas ──
   if (overdue.length) html+=`<div class="overdue-section today-section" style="margin-bottom:8px"><div class="group-label" style="color:var(--danger);margin-bottom:4px"><div class="group-dot" style="background:var(--danger)"></div>Atrasadas</div>${taskTableHTML(overdue)}</div>`
   const upcoming = open.filter(t=>!overdue.find(o=>o.id===t.id))
   if (upcoming.length) html+=`<div class="today-section"><div class="group-label" style="margin-bottom:4px"><div class="group-dot" style="background:var(--text-3)"></div>Abertas</div>${taskTableHTML(upcoming)}</div>`
   if (done.length) html+=`<div class="today-section" style="margin-top:8px"><div class="group-label" style="margin-bottom:4px"><div class="group-dot" style="background:var(--success)"></div>Concluídas</div>${taskTableHTML(done)}</div>`
-  if (!tasks.length) html='<div class="empty-state">Nenhuma tarefa ainda.<br><small>Vá para a aba Tarefas para criar.</small></div>'
+  if (!tasks.length && !subs.length) html='<div class="empty-state">Nenhuma tarefa ainda.<br><small>Vá para a aba Tarefas para criar.</small></div>'
+
   el.innerHTML = html
 }
 
