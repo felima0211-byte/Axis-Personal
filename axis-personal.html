@@ -845,30 +845,38 @@ function renderProjectOverview() {
 
   // ── Sub-projetos ──
   if (subs.length) {
-    const subsRows = subs.map(s => {
-      const st = state.tasks.filter(t=>t.project_id===s.id&&t.status!=='archived')
+    const subCards = subs.map(s => {
+      const st    = state.tasks.filter(t=>t.project_id===s.id&&t.status!=='archived')
       const sOpen = st.filter(t=>t.status!=='done').length
       const sDone = st.filter(t=>t.status==='done').length
       const sTotal = st.length
       const sProg = sTotal>0?Math.round((sDone/sTotal)*100):0
       const sOver = st.filter(t=>t.due_at&&t.due_at<now&&t.status!=='done').length
-      return `<div onclick="openProject('${s.id}')" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:background 120ms;border:1px solid var(--border)" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background=''">
-        <div style="width:10px;height:10px;border-radius:50%;background:${s.color};flex-shrink:0"></div>
-        <span style="flex:1;font-weight:600;font-size:13px">${esc(s.name)}</span>
-        <span style="font-size:11px;color:var(--text-3)">${sOpen} aberta${sOpen!==1?'s':''}</span>
-        ${sOver>0?`<span style="font-size:11px;color:var(--danger)">${sOver} atrasada${sOver!==1?'s':''}</span>`:''}
-        <div style="width:60px;height:4px;background:var(--surface-3);border-radius:2px;flex-shrink:0"><div style="height:4px;border-radius:2px;background:${s.color};width:${sProg}%"></div></div>
-        <span style="font-size:11px;color:var(--text-3);font-family:monospace">${sProg}%</span>
-        <span style="color:var(--text-3);font-size:12px">→</span>
+      const sMsgs = state.messages.filter(m=>m.project_id===s.id).length
+      return `<div onclick="openProject('${s.id}')" class="proj-card" style="cursor:pointer;min-height:0;gap:10px">
+        <div class="proj-card-header">
+          <div class="proj-dot" style="background:${s.color}"></div>
+          <span class="proj-name">${esc(s.name)}</span>
+        </div>
+        <div>
+          <div class="proj-tasks-num" style="font-size:22px">${sOpen}</div>
+          <div class="proj-tasks-label">tarefas abertas</div>
+        </div>
+        <div>${sOver>0
+          ?`<span class="proj-badge proj-badge-late">${sOver} atrasada${sOver!==1?'s':''}</span>`
+          :`<span class="proj-badge proj-badge-ok">em dia</span>`}
+        </div>
+        <div class="proj-progress"><div class="proj-progress-bar" style="width:${sProg}%;background:${s.color}"></div></div>
+        <div class="proj-meta mono"><span>${sTotal} tarefa${sTotal!==1?'s':''}</span><span>${sMsgs} conversa${sMsgs!==1?'s':''}</span><span>${sProg}% ok</span></div>
       </div>`
     }).join('')
 
     html += `<div style="margin-bottom:20px">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
         <div class="group-label"><div class="group-dot" style="background:var(--accent-violet)"></div>Sub-projetos</div>
-        <button class="btn-sm" onclick="openSubProjectDialog()" style="font-size:11px">+ Novo sub-projeto</button>
+        <button class="btn-sm" onclick="openSubProjectDialog()" style="font-size:11px">+ Novo</button>
       </div>
-      <div style="display:flex;flex-direction:column;gap:6px">${subsRows}</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px">${subCards}</div>
     </div>
     <div style="border-top:1px solid var(--border);margin-bottom:16px"></div>`
   }
