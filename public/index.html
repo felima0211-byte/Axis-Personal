@@ -309,7 +309,7 @@ body{font-family:-apple-system,'Inter',sans-serif;font-size:14px;background:var(
       <div class="breadcrumb" onclick="showScreen('dashboard')">← Projetos / <span id="proj-breadcrumb">—</span></div>
       <div class="proj-detail-title">
         <div class="proj-detail-dot" id="proj-detail-dot"></div>
-        <span id="proj-detail-name">—</span>
+        <span id="proj-detail-name" title="Clique para editar" onclick="startEditProjectName()" style="cursor:pointer;border-bottom:1px dashed transparent;transition:border-color 150ms" onmouseenter="this.style.borderBottomColor='var(--border-strong)'" onmouseleave="this.style.borderBottomColor='transparent'">—</span>
         <span class="proj-badge proj-badge-late" id="proj-detail-late" style="display:none"></span>
       </div>
       <div class="proj-detail-meta mono" id="proj-detail-meta"></div>
@@ -812,6 +812,30 @@ function deleteCurrentProject() {
   STORE.save('projects',state.projects); STORE.save('tasks',state.tasks)
   STORE.save('messages',state.messages); STORE.save('documents',state.documents)
   showScreen('dashboard'); renderDashboard()
+}
+
+function startEditProjectName() {
+  const span = document.getElementById('proj-detail-name')
+  const current = span.textContent
+  const input = document.createElement('input')
+  input.value = current
+  input.style.cssText = 'background:var(--surface-2);border:1px solid var(--accent-cyan);border-radius:6px;padding:2px 8px;color:var(--text);font-size:inherit;font-weight:inherit;outline:none;width:260px'
+  span.replaceWith(input)
+  input.focus(); input.select()
+  const save = () => {
+    const val = input.value.trim() || current
+    state = STORE.load()
+    const p = state.projects.find(x => x.id === currentProjectId); if (!p) return
+    p.name = val
+    STORE.save('projects', state.projects)
+    const newSpan = span.cloneNode(false)
+    newSpan.textContent = val
+    input.replaceWith(newSpan)
+    document.getElementById('proj-breadcrumb').textContent = val
+    renderDashboard()
+  }
+  input.addEventListener('blur', save)
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { input.value = current; input.blur() } })
 }
 
 // ── CONVERSATIONS ──
