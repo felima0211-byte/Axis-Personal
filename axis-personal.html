@@ -22,13 +22,15 @@
   --accent-cyan:#1c86ad;--accent-violet:#6b4fc0;--accent-amber:#a9741b;
   --iridescent:linear-gradient(135deg,#2f87d6 0%,#7d5fcf 55%,#c46ad6 100%);
 }
-body{font-family:-apple-system,'Inter',sans-serif;font-size:14px;background:var(--bg);color:var(--text);display:flex;height:100vh;overflow:hidden}
+body{font-family:-apple-system,'Inter',sans-serif;font-size:14px;background:var(--bg);color:var(--text);display:flex;height:100vh;overflow:hidden;position:relative}
+body::before{content:'';position:fixed;inset:0;background:url('axis-bg.png') center center/cover no-repeat;opacity:.18;pointer-events:none;z-index:0}
+.sidebar,.main-content,.dialog-overlay,.preview-overlay{position:relative;z-index:1}
 .mono{font-family:'JetBrains Mono','Menlo',monospace}
 
 /* SIDEBAR */
 .sidebar{width:220px;background:var(--surface-1);border-right:1px solid var(--border);display:flex;flex-direction:column;padding:20px 12px;gap:4px;flex-shrink:0}
 .logo{display:flex;align-items:center;gap:10px;padding:0 8px 20px;border-bottom:1px solid var(--border);margin-bottom:8px}
-.logo-crystal{width:24px;height:24px;background:var(--iridescent);border-radius:5px}
+.logo-crystal{width:32px;height:32px;border-radius:6px;object-fit:cover;flex-shrink:0}
 .wordmark{display:flex;flex-direction:column;gap:1px}
 .wordmark-axis{font-size:15px;font-weight:800;letter-spacing:.08em;color:var(--text)}
 .wordmark-sub{font-size:10px;color:var(--text-3);font-family:monospace;letter-spacing:.04em}
@@ -248,7 +250,7 @@ body{font-family:-apple-system,'Inter',sans-serif;font-size:14px;background:var(
 
 <aside class="sidebar">
   <div class="logo">
-    <div class="logo-crystal"></div>
+    <img class="logo-crystal" src="axis-icon.png" alt="Axis">
     <div class="wordmark">
       <span class="wordmark-axis">AXIS</span>
       <span class="wordmark-sub mono">Personal</span>
