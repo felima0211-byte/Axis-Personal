@@ -854,7 +854,12 @@ function saveConversation() {
   err.style.display='none'
   const msg={id:STORE.uid(),project_id:projectId,content:text,requester_name:requester||null,created_at:new Date().toISOString()}
   state.messages.push(msg)
-  STORE.save('messages',state.messages)
+  // extração automática de tarefas — cada linha com >15 chars vira uma tarefa
+  const lines=text.split('\n').map(l=>l.trim()).filter(l=>l.length>15)
+  lines.slice(0,20).forEach(line=>{
+    state.tasks.push({id:STORE.uid(),project_id:projectId,title:line.slice(0,160),status:'open',priority:'normal',due_at:null,start_at:null,description:null,created_at:new Date().toISOString()})
+  })
+  STORE.save('messages',state.messages); STORE.save('tasks',state.tasks)
   document.getElementById('conv-text').value=''
   document.getElementById('conv-requester').value=''
   document.getElementById('conv-project').value=''
