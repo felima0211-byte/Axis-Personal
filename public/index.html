@@ -74,15 +74,9 @@ body::before{content:'';position:fixed;inset:0;background:url('axis-bg.png') cen
 .proj-card:hover{border-color:var(--border-strong);background:var(--surface-2)}
 .proj-card-new{border-style:dashed;justify-content:center;align-items:center;gap:8px;color:var(--text-3);min-height:120px}
 .proj-card-new:hover{color:var(--text-2)}
-.proj-card.drag-over{border-color:var(--accent-cyan)!important;background:rgba(110,193,228,.08)!important;box-shadow:0 0 0 2px rgba(110,193,228,.3)}
-.proj-card[draggable=true]{cursor:grab}
-.proj-card[draggable=true]:active{cursor:grabbing}
 .sub-proj-list{display:flex;flex-direction:column;gap:3px;border-top:1px solid var(--border);padding-top:10px;margin-top:4px}
 .sub-proj-item{display:flex;align-items:center;gap:7px;padding:5px 8px;border-radius:6px;font-size:12px;color:var(--text-2);transition:background 120ms}
 .sub-proj-item:hover{background:var(--surface-2);color:var(--text)}
-.drop-to-root{display:none;grid-column:1/-1;border:2px dashed var(--border-strong);border-radius:12px;padding:14px;text-align:center;font-size:12px;color:var(--text-3);transition:border-color 120ms,color 120ms}
-.drop-to-root.drag-over{border-color:var(--accent-cyan);color:var(--accent-cyan)}
-body.is-dragging .drop-to-root{display:block}
 .proj-card-header{display:flex;align-items:center;gap:10px}
 .proj-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
 .proj-name{font-weight:600;font-size:14px}
@@ -596,15 +590,6 @@ function renderProjects() {
   const children = allActive.filter(p => !!p.parent_id)
   grid.innerHTML = ''
 
-  // zona de drop para raiz (aparece só durante drag)
-  const rootZone = document.createElement('div')
-  rootZone.className = 'drop-to-root'
-  rootZone.textContent = 'Solte aqui para remover do projeto pai'
-  rootZone.addEventListener('dragover', e => { e.preventDefault(); rootZone.classList.add('drag-over') })
-  rootZone.addEventListener('dragleave', () => rootZone.classList.remove('drag-over'))
-  rootZone.addEventListener('drop', e => { e.preventDefault(); dropToRoot() })
-  grid.appendChild(rootZone)
-
   if (!roots.length && !children.length) {
     const e = document.createElement('div')
     e.className = 'empty-state'; e.style.gridColumn='1/-1'
@@ -637,12 +622,6 @@ function buildProjectCard(p, allChildren) {
   const card = document.createElement('div')
   card.className = 'proj-card'
   card.dataset.id = p.id
-  card.draggable = true
-  card.addEventListener('dragstart', e => { draggedProjectId = p.id; document.body.classList.add('is-dragging'); e.dataTransfer.effectAllowed='move' })
-  card.addEventListener('dragend',   () => { draggedProjectId = null; document.body.classList.remove('is-dragging'); document.querySelectorAll('.proj-card.drag-over,.drop-to-root.drag-over').forEach(el=>el.classList.remove('drag-over')) })
-  card.addEventListener('dragover',  e => { e.preventDefault(); if(draggedProjectId && draggedProjectId!==p.id) card.classList.add('drag-over') })
-  card.addEventListener('dragleave', () => card.classList.remove('drag-over'))
-  card.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); dropOnProject(p.id) })
   card.addEventListener('click', () => openProject(p.id))
 
   const subsHTML = subs.length ? `
@@ -919,10 +898,9 @@ function createProject() {
 }
 
 function openSubProjectDialog() {
-  populateProjectSelects()
+  openDialog('project') // popula selects internamente
   const sel = document.getElementById('proj-parent-select')
-  if (sel) sel.value = currentProjectId
-  openDialog('project')
+  if (sel) sel.value = currentProjectId // define pai APÓS populate
 }
 
 function deleteCurrentProject() {
