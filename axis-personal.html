@@ -348,7 +348,11 @@ body{font-family:-apple-system,'Inter',sans-serif;font-size:14px;background:var(
           Fazer upload
         </label>
         <input type="file" id="file-upload-input" multiple accept="image/*,.pdf,.xlsx,.xls,.csv,.doc,.docx,.txt,.pptx,.ppt,.zip" style="display:none" onchange="handleFileUpload(this)">
-        <span style="font-size:12px;color:var(--text-3)">imagens, planilhas, PDFs, documentos…</span>
+        <button class="btn-upload" onclick="openDialog('link')">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M6.5 9.5a3.5 3.5 0 0 0 5 0l2-2a3.5 3.5 0 0 0-5-5l-1 1"/><path d="M9.5 6.5a3.5 3.5 0 0 0-5 0l-2 2a3.5 3.5 0 0 0 5 5l1-1"/></svg>
+          + Link
+        </button>
+        <span style="font-size:12px;color:var(--text-3)">imagens, planilhas, PDFs…</span>
         <div style="margin-left:auto;display:flex;gap:4px">
           <button class="docs-view-btn filter-btn active" onclick="setDocsView('grid',this)" title="Galeria">
             <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="6" height="6" rx="1"/><rect x="9" y="1" width="6" height="6" rx="1"/><rect x="1" y="9" width="6" height="6" rx="1"/><rect x="9" y="9" width="6" height="6" rx="1"/></svg>
@@ -397,6 +401,26 @@ body{font-family:-apple-system,'Inter',sans-serif;font-size:14px;background:var(
     <div class="dialog-actions">
       <button class="btn-ghost" onclick="closeDialog('conv')">Cancelar</button>
       <button class="btn-primary" onclick="saveConversation()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- DIALOG: Inserir Link -->
+<div class="dialog-overlay" id="dialog-link" onclick="closeDialogIfBg(event,'link')">
+  <div class="dialog">
+    <h3>Inserir link</h3>
+    <div>
+      <label>Nome</label>
+      <input type="text" id="link-name" placeholder="ex: Planilha de Custos">
+    </div>
+    <div>
+      <label>URL</label>
+      <input type="url" id="link-url" placeholder="https://" onkeydown="if(event.key==='Enter')saveLink()">
+    </div>
+    <div id="link-error" class="field-error" style="display:none"></div>
+    <div class="dialog-actions">
+      <button class="btn-ghost" onclick="closeDialog('link')">Cancelar</button>
+      <button class="btn-primary" onclick="saveLink()">Salvar</button>
     </div>
   </div>
 </div>
@@ -1113,32 +1137,61 @@ function renderProjectDocuments() {
   const docs = state.documents.filter(d=>d.project_id===currentProjectId).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))
   if (!docs.length) { el.innerHTML='<div class="empty-state">Nenhum documento ainda.<br><small>Faça upload de imagens, planilhas, PDFs…</small></div>'; return }
 
-  if (docsView === 'grid') {
-    el.innerHTML = `<div class="docs-grid">${docs.map(doc => {
-      const isImg = doc.type.startsWith('image/')
-      return `<div class="doc-card" onclick="openDocPreview('${doc.id}')">
-        ${isImg ? `<img class="doc-preview" src="${doc.data}" alt="${esc(doc.name)}">` : `<div class="doc-icon-preview">${fileIcon(doc.name)}</div>`}
+  const docCard = doc => {
+    if (doc.kind === 'link') {
+      return `<div class="doc-card" onclick="window.open('${esc(doc.url)}','_blank')" style="cursor:pointer">
+        <div class="doc-icon-preview" style="font-size:28px">🔗</div>
         <div class="doc-info">
-          <div class="doc-name" title="${esc(doc.name)}">${esc(doc.name)}</div>
-          <div class="doc-meta"><span>${fmtSize(doc.size)}</span><span>${fmtDate(doc.created_at)}</span></div>
+          <div class="doc-name" title="${esc(doc.url)}">${esc(doc.name)}</div>
+          <div class="doc-meta"><span style="color:var(--accent-cyan);font-size:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px">${esc(doc.url)}</span><span>${fmtDate(doc.created_at)}</span></div>
           <div class="doc-actions" onclick="event.stopPropagation()">
-            <a href="${doc.data}" download="${esc(doc.name)}" class="btn-sm" style="text-decoration:none;font-size:11px">↓ Baixar</a>
+            <a href="${esc(doc.url)}" target="_blank" class="btn-sm" style="text-decoration:none;font-size:11px">↗ Abrir</a>
             <button class="btn-sm btn-reject" style="font-size:11px" onclick="deleteDoc('${doc.id}')">Excluir</button>
           </div>
         </div></div>`
-    }).join('')}</div>`
-  } else {
-    el.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px">${docs.map(doc => `
-      <div onclick="openDocPreview('${doc.id}')" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:background 120ms" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background=''">
-        <span style="font-size:22px;flex-shrink:0">${doc.type.startsWith('image/')?'🖼️':fileIcon(doc.name)}</span>
-        <span style="flex:1;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(doc.name)}">${esc(doc.name)}</span>
-        <span style="font-size:11px;color:var(--text-3);font-family:monospace;flex-shrink:0">${fmtSize(doc.size)}</span>
+    }
+    const isImg = doc.type.startsWith('image/')
+    return `<div class="doc-card" onclick="openDocPreview('${doc.id}')">
+      ${isImg ? `<img class="doc-preview" src="${doc.data}" alt="${esc(doc.name)}">` : `<div class="doc-icon-preview">${fileIcon(doc.name)}</div>`}
+      <div class="doc-info">
+        <div class="doc-name" title="${esc(doc.name)}">${esc(doc.name)}</div>
+        <div class="doc-meta"><span>${fmtSize(doc.size)}</span><span>${fmtDate(doc.created_at)}</span></div>
+        <div class="doc-actions" onclick="event.stopPropagation()">
+          <a href="${doc.data}" download="${esc(doc.name)}" class="btn-sm" style="text-decoration:none;font-size:11px">↓ Baixar</a>
+          <button class="btn-sm btn-reject" style="font-size:11px" onclick="deleteDoc('${doc.id}')">Excluir</button>
+        </div>
+      </div></div>`
+  }
+
+  const docRow = doc => {
+    if (doc.kind === 'link') {
+      return `<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:background 120ms" onclick="window.open('${esc(doc.url)}','_blank')" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background=''">
+        <span style="font-size:22px;flex-shrink:0">🔗</span>
+        <span style="flex:1;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(doc.url)}">${esc(doc.name)}</span>
+        <span style="font-size:11px;color:var(--accent-cyan);font-family:monospace;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;max-width:180px">${esc(doc.url)}</span>
         <span style="font-size:11px;color:var(--text-3);font-family:monospace;flex-shrink:0">${fmtDate(doc.created_at)}</span>
         <div onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-shrink:0">
-          <a href="${doc.data}" download="${esc(doc.name)}" class="btn-sm" style="text-decoration:none;font-size:11px">↓</a>
+          <a href="${esc(doc.url)}" target="_blank" class="btn-sm" style="text-decoration:none;font-size:11px">↗</a>
           <button class="btn-sm btn-reject" style="font-size:11px" onclick="deleteDoc('${doc.id}')">✕</button>
         </div>
-      </div>`).join('')}</div>`
+      </div>`
+    }
+    return `<div onclick="openDocPreview('${doc.id}')" style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:8px;cursor:pointer;transition:background 120ms" onmouseover="this.style.background='var(--surface-2)'" onmouseout="this.style.background=''">
+      <span style="font-size:22px;flex-shrink:0">${doc.type.startsWith('image/')?'🖼️':fileIcon(doc.name)}</span>
+      <span style="flex:1;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(doc.name)}">${esc(doc.name)}</span>
+      <span style="font-size:11px;color:var(--text-3);font-family:monospace;flex-shrink:0">${fmtSize(doc.size)}</span>
+      <span style="font-size:11px;color:var(--text-3);font-family:monospace;flex-shrink:0">${fmtDate(doc.created_at)}</span>
+      <div onclick="event.stopPropagation()" style="display:flex;gap:4px;flex-shrink:0">
+        <a href="${doc.data}" download="${esc(doc.name)}" class="btn-sm" style="text-decoration:none;font-size:11px">↓</a>
+        <button class="btn-sm btn-reject" style="font-size:11px" onclick="deleteDoc('${doc.id}')">✕</button>
+      </div>
+    </div>`
+  }
+
+  if (docsView === 'grid') {
+    el.innerHTML = `<div class="docs-grid">${docs.map(docCard).join('')}</div>`
+  } else {
+    el.innerHTML = `<div style="display:flex;flex-direction:column;gap:2px">${docs.map(docRow).join('')}</div>`
   }
 }
 
@@ -1189,6 +1242,22 @@ function closePreview(e) { if (e.target===e.currentTarget) document.getElementBy
 function deleteDoc(id) {
   state.documents = state.documents.filter(d=>d.id!==id)
   localStorage.setItem('axis_documents', JSON.stringify(state.documents))
+  renderProjectDocuments(); updateDocsBadge()
+}
+
+function saveLink() {
+  const name = document.getElementById('link-name').value.trim()
+  const url  = document.getElementById('link-url').value.trim()
+  const err  = document.getElementById('link-error')
+  if (!url) { err.textContent='Informe a URL.'; err.style.display='block'; return }
+  err.style.display='none'
+  const docs = JSON.parse(localStorage.getItem('axis_documents') || '[]')
+  docs.push({id:STORE.uid(), project_id:currentProjectId, name:name||url, url:url, kind:'link', type:'link', size:0, data:null, created_at:new Date().toISOString()})
+  localStorage.setItem('axis_documents', JSON.stringify(docs))
+  state.documents = docs
+  document.getElementById('link-name').value = ''
+  document.getElementById('link-url').value  = ''
+  closeDialog('link')
   renderProjectDocuments(); updateDocsBadge()
 }
 
