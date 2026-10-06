@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Axis Personal</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root[data-theme='dark']{
@@ -285,16 +286,16 @@ body.is-dragging .root-drop-zone{display:block}
     </button>
     <div style="display:flex;align-items:center;gap:8px;padding:4px 10px">
       <div class="live-dot"></div>
-      <span style="font-size:11px;color:var(--text-3)" class="mono">local</span>
+      <span style="font-size:11px;color:var(--text-3)" class="mono" id="sync-label">conectando…</span>
     </div>
     <div style="display:flex;gap:4px">
-      <button class="theme-toggle" style="flex:1" onclick="exportData()" title="Exportar todos os dados como backup">
+      <button class="theme-toggle" style="flex:1" onclick="exportData()" title="Exportar backup">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8M5 7l3 3 3-3"/><rect x="2" y="11" width="12" height="3" rx="1"/></svg>
-        Exportar
+        Backup
       </button>
-      <button class="theme-toggle" style="flex:1" onclick="document.getElementById('import-input').click()" title="Restaurar backup">
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 14V6M5 9l3-3 3 3"/><rect x="2" y="2" width="12" height="3" rx="1"/></svg>
-        Importar
+      <button class="theme-toggle" style="flex:1" onclick="signOut()" title="Sair">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l3-3-3-3M13 8H6"/></svg>
+        Sair
       </button>
       <input type="file" id="import-input" accept=".json" style="display:none" onchange="importData(this)">
     </div>
@@ -530,6 +531,27 @@ body.is-dragging .root-drop-zone{display:block}
   </div>
 </div>
 
+<!-- LOGIN SCREEN -->
+<div id="login-screen" style="position:fixed;inset:0;background:var(--bg);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:0">
+  <div style="display:flex;flex-direction:column;align-items:center;gap:20px;max-width:340px;width:100%;padding:0 24px">
+    <img src="axis-icon.png" style="width:32px;height:48px;object-fit:contain">
+    <div style="text-align:center;line-height:1.3">
+      <div style="font-size:22px;font-weight:800;letter-spacing:.08em">AXIS</div>
+      <div style="font-size:10px;color:var(--text-3);font-family:monospace;letter-spacing:.04em">Personal</div>
+    </div>
+    <div id="login-form" style="width:100%;display:flex;flex-direction:column;gap:10px;margin-top:4px">
+      <input type="email" id="login-email" placeholder="seu@email.com" autocomplete="email"
+        style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;color:var(--text);font-size:14px;outline:none;width:100%"
+        onkeydown="if(event.key==='Enter')sendMagicLink()">
+      <button id="login-btn" onclick="sendMagicLink()"
+        style="padding:12px;border-radius:10px;background:var(--text);color:var(--bg);border:none;font-size:14px;font-weight:600;cursor:pointer;width:100%;transition:opacity 150ms">
+        Entrar com link mágico
+      </button>
+      <div id="login-msg" style="font-size:12px;color:var(--text-3);text-align:center;display:none;line-height:1.5"></div>
+    </div>
+  </div>
+</div>
+
 <!-- PREVIEW MODAL -->
 <div class="preview-overlay" id="preview-overlay" onclick="closePreview(event)">
   <div class="preview-box">
@@ -544,29 +566,127 @@ body.is-dragging .root-drop-zone{display:block}
 </div>
 
 <script>
-// ── STORE ──
-const STORE = {
-  load() {
-    return {
-      projects:  JSON.parse(localStorage.getItem('axis_projects')  || '[]'),
-      tasks:     JSON.parse(localStorage.getItem('axis_tasks')     || '[]'),
-      messages:  JSON.parse(localStorage.getItem('axis_messages')  || '[]'),
-      documents: JSON.parse(localStorage.getItem('axis_documents') || '[]'),
-    }
-  },
-  save(key, data) { localStorage.setItem('axis_' + key, JSON.stringify(data)) },
-  uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2) }
-}
+// ── SUPABASE ──
+const SUPA_URL = 'https://wulgdkszppwsnbihozwp.supabase.co'
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind1bGdka3N6cHB3c25iaWhvendwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTEwNDI1NTksImV4cCI6MjEwNjYxODU1OX0.7jeUwx48A9UFLWcEO7yEyqIQmlaVZ-untl40-RG6ato'
+const supa = window.supabase.createClient(SUPA_URL, SUPA_KEY)
 
-let state = STORE.load()
+let currentUser = null
+let state = { projects: [], tasks: [], messages: [], documents: [] }
 let currentProjectId = null
 let currentFilter = 'active'
+
+function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2) }
+
+async function dbUpsert(table, row) {
+  if (!currentUser) return
+  const { error } = await supa.from(table).upsert({...row, user_id: currentUser.id})
+  if (error) console.error('[supa upsert]', table, error.message)
+}
+
+async function dbDelete(table, id) {
+  if (!currentUser) return
+  const { error } = await supa.from(table).delete().eq('id', id)
+  if (error) console.error('[supa delete]', table, error.message)
+}
+
+async function loadAll() {
+  if (!currentUser) return
+  const userId = currentUser.id
+  const [p, t, m, d] = await Promise.all([
+    supa.from('projects').select('*').eq('user_id', userId).order('created_at'),
+    supa.from('tasks').select('*').eq('user_id', userId).order('created_at'),
+    supa.from('messages').select('*').eq('user_id', userId).order('created_at'),
+    supa.from('documents').select('*').eq('user_id', userId).order('created_at'),
+  ])
+  state.projects  = p.data || []
+  state.tasks     = t.data || []
+  state.messages  = m.data || []
+  state.documents = d.data || []
+  // auto-migrate localStorage na primeira vez (Supabase vazio)
+  if (!state.projects.length && !state.tasks.length) {
+    await migrateLocalStorage()
+  }
+}
+
+async function migrateLocalStorage() {
+  const lsP = JSON.parse(localStorage.getItem('axis_projects')  || '[]')
+  const lsT = JSON.parse(localStorage.getItem('axis_tasks')     || '[]')
+  const lsM = JSON.parse(localStorage.getItem('axis_messages')  || '[]')
+  const lsD = JSON.parse(localStorage.getItem('axis_documents') || '[]')
+  if (!lsP.length && !lsT.length) return
+  const userId = currentUser.id
+  const doUp = async (table, rows) => {
+    if (!rows.length) return
+    const { error } = await supa.from(table).upsert(rows.map(r => ({...r, user_id: userId})))
+    if (error) console.warn('migrate', table, error.message)
+  }
+  await doUp('projects', lsP)
+  await doUp('tasks', lsT)
+  await doUp('messages', lsM)
+  // documentos podem ser grandes — migrar um a um
+  for (const doc of lsD) {
+    try { await supa.from('documents').upsert({...doc, user_id: userId}) } catch(e) {}
+  }
+  state.projects  = lsP
+  state.tasks     = lsT
+  state.messages  = lsM
+  state.documents = lsD
+}
+
+// ── AUTH ──
+async function sendMagicLink() {
+  const email = document.getElementById('login-email').value.trim()
+  const msg   = document.getElementById('login-msg')
+  const btn   = document.getElementById('login-btn')
+  if (!email) { msg.textContent='Informe seu email.'; msg.style.color='var(--danger)'; msg.style.display='block'; return }
+  btn.disabled = true; btn.textContent = 'Enviando…'; btn.style.opacity = '.6'
+  const { error } = await supa.auth.signInWithOtp({
+    email,
+    options: { emailRedirectTo: 'https://axispersonal01.vercel.app' }
+  })
+  btn.disabled = false; btn.textContent = 'Entrar com link mágico'; btn.style.opacity = '1'
+  if (error) {
+    msg.textContent = 'Erro: ' + error.message; msg.style.color = 'var(--danger)'
+  } else {
+    msg.textContent = '✓ Link enviado! Verifique seu email e clique no link para entrar.'
+    msg.style.color = 'var(--success)'
+    document.getElementById('login-email').disabled = true; btn.disabled = true; btn.style.opacity = '.4'
+  }
+  msg.style.display = 'block'
+}
+
+async function signOut() {
+  await supa.auth.signOut()
+}
+
+supa.auth.onAuthStateChange(async (event, session) => {
+  if (session?.user) {
+    currentUser = session.user
+    document.getElementById('login-screen').style.display = 'none'
+    await loadAll()
+    document.getElementById('today-date').textContent =
+      new Date().toLocaleDateString('pt-BR', {weekday:'long',day:'numeric',month:'long',year:'numeric'})
+    const emailShort = currentUser.email?.split('@')[0] || 'eu'
+    document.getElementById('sync-label').textContent = emailShort
+    renderDashboard()
+  } else {
+    currentUser = null
+    state = { projects: [], tasks: [], messages: [], documents: [] }
+    document.getElementById('sync-label').textContent = 'desconectado'
+    document.getElementById('login-screen').style.display = 'flex'
+    document.getElementById('login-email').disabled = false
+    document.getElementById('login-btn').disabled = false
+    document.getElementById('login-btn').style.opacity = '1'
+    document.getElementById('login-btn').textContent = 'Entrar com link mágico'
+    document.getElementById('login-msg').style.display = 'none'
+  }
+})
 
 // ── INIT ──
 function init() {
   document.getElementById('today-date').textContent =
     new Date().toLocaleDateString('pt-BR', {weekday:'long',day:'numeric',month:'long',year:'numeric'})
-  renderDashboard()
 }
 
 // ── NAVIGATION ──
@@ -593,10 +713,9 @@ function switchTab(tab, el) {
 
 // ── DASHBOARD ──
 function renderDashboard() {
-  state = STORE.load()
   renderProjects()
   updateTodayBanner()
-  }
+}
 
 let draggedProjectId = null
 
@@ -625,9 +744,8 @@ function renderProjects() {
     const src = e.dataTransfer.getData('text/plain') || draggedProjectId
     rootZone.classList.remove('drag-over')
     if (src) {
-      state = STORE.load()
       const proj = state.projects.find(x => x.id === src)
-      if (proj) { proj.parent_id = null; STORE.save('projects', state.projects) }
+      if (proj) { proj.parent_id = null; dbUpsert('projects', proj) }
     }
     clearDragState(); renderDashboard()
   })
@@ -698,9 +816,8 @@ function buildProjectCard(p, allChildren) {
     const src = e.dataTransfer.getData('text/plain') || draggedProjectId
     card.classList.remove('drag-over')
     if (src && src !== p.id && !isAncestor(src, p.id)) {
-      state = STORE.load()
       const proj = state.projects.find(x => x.id === src)
-      if (proj) { proj.parent_id = p.id; STORE.save('projects', state.projects) }
+      if (proj) { proj.parent_id = p.id; dbUpsert('projects', proj) }
     }
     clearDragState()
     renderDashboard()
@@ -783,7 +900,6 @@ function populateProjectSelects() {
 
 // ── PROJECT DETAIL ──
 function openProject(id) {
-  state = STORE.load()
   currentProjectId = id
   const p = state.projects.find(x => x.id===id)
   if (!p) return
@@ -838,7 +954,6 @@ function taskTableHTML(tasks) {
 function renderProjectOverview() {
   const el = document.getElementById('tab-overview')
   const now = new Date().toISOString()
-  state = STORE.load()
   const tasks = state.tasks.filter(t => t.project_id===currentProjectId && t.status!=='archived')
   const overdue = tasks.filter(t => t.due_at && t.due_at<now && t.status!=='done')
   const open = tasks.filter(t => t.status!=='done')
@@ -942,10 +1057,9 @@ function renderProjectConversations() {
 
 // ── TASK TOGGLE / ADD / EDIT ──
 function toggleTask(id) {
-  state = STORE.load()
   const task = state.tasks.find(t=>t.id===id); if(!task)return
   task.status = task.status==='done'?'open':'done'
-  STORE.save('tasks',state.tasks)
+  dbUpsert('tasks', task)
   const screen = document.querySelector('.screen.active')?.id
   if (screen==='screen-today') { renderToday(); updateTodayBanner(); return }
   const activeTab = document.querySelector('.tab-content.active')?.id
@@ -958,8 +1072,9 @@ function addTaskInline() {
   const input = document.getElementById('new-task-input')
   const title = input.value.trim(); if(!title)return
   const prio = document.getElementById('new-task-prio').value||'normal'
-  state.tasks.push({id:STORE.uid(),project_id:currentProjectId,title,status:'confirmed',priority:prio,due_at:null,start_at:null,created_at:new Date().toISOString()})
-  STORE.save('tasks',state.tasks); input.value=''
+  const task = {id:uid(),project_id:currentProjectId,title,status:'confirmed',priority:prio,due_at:null,start_at:null,created_at:new Date().toISOString()}
+  state.tasks.push(task)
+  dbUpsert('tasks', task); input.value=''
   renderProjectTasks(); renderProjectOverview(); updateTodayBanner()
 }
 
@@ -986,7 +1101,7 @@ function saveTaskEdit() {
   const dv = document.getElementById('edit-task-due').value
   task.due_at = dv ? new Date(dv+'T12:00:00').toISOString() : null
   task.priority = document.querySelector('.prio-opt.sel')?.dataset.prio||'normal'
-  STORE.save('tasks',state.tasks)
+  dbUpsert('tasks', task)
   closeDialog('task')
   const activeTab = document.querySelector('.tab-content.active')?.id
   if (activeTab==='tab-tasks') renderProjectTasks(); else renderProjectOverview()
@@ -1002,8 +1117,9 @@ function createProject() {
   if (!name){err.textContent='Digite um nome.';err.style.display='block';return}
   err.style.display='none'
   const parentId = document.getElementById('proj-parent-select')?.value || null
-  state.projects.push({id:STORE.uid(),name,description:desc,color,status:'active',parent_id:parentId||null,created_at:new Date().toISOString()})
-  STORE.save('projects',state.projects)
+  const proj = {id:uid(),name,description:desc,color,status:'active',parent_id:parentId||null,created_at:new Date().toISOString()}
+  state.projects.push(proj)
+  dbUpsert('projects', proj)
   document.getElementById('proj-name-input').value=''
   document.getElementById('proj-desc-input').value=''
   const ps = document.getElementById('proj-parent-select'); if(ps) ps.value=''
@@ -1016,16 +1132,21 @@ function openSubProjectDialog() {
   if (sel) sel.value = currentProjectId // define pai APÓS populate
 }
 
-function deleteCurrentProject() {
+async function deleteCurrentProject() {
   if (!currentProjectId) return
   const p = state.projects.find(x=>x.id===currentProjectId); if(!p)return
   if (!confirm(`Excluir "${p.name}"?`)) return
-  state.projects=state.projects.filter(x=>x.id!==currentProjectId)
-  state.tasks=state.tasks.filter(t=>t.project_id!==currentProjectId)
-  state.messages=state.messages.filter(m=>m.project_id!==currentProjectId)
-  state.documents=state.documents.filter(d=>d.project_id!==currentProjectId)
-  STORE.save('projects',state.projects); STORE.save('tasks',state.tasks)
-  STORE.save('messages',state.messages); STORE.save('documents',state.documents)
+  const deletedTaskIds   = state.tasks.filter(t=>t.project_id===currentProjectId).map(t=>t.id)
+  const deletedMsgIds    = state.messages.filter(m=>m.project_id===currentProjectId).map(m=>m.id)
+  const deletedDocIds    = state.documents.filter(d=>d.project_id===currentProjectId).map(d=>d.id)
+  state.projects  = state.projects.filter(x=>x.id!==currentProjectId)
+  state.tasks     = state.tasks.filter(t=>t.project_id!==currentProjectId)
+  state.messages  = state.messages.filter(m=>m.project_id!==currentProjectId)
+  state.documents = state.documents.filter(d=>d.project_id!==currentProjectId)
+  await dbDelete('projects', currentProjectId)
+  for (const id of deletedTaskIds)  await dbDelete('tasks', id)
+  for (const id of deletedMsgIds)   await dbDelete('messages', id)
+  for (const id of deletedDocIds)   await dbDelete('documents', id)
   showScreen('dashboard'); renderDashboard()
 }
 
@@ -1039,10 +1160,9 @@ function startEditProjectName() {
   input.focus(); input.select()
   const save = () => {
     const val = input.value.trim() || current
-    state = STORE.load()
     const p = state.projects.find(x => x.id === currentProjectId); if (!p) return
     p.name = val
-    STORE.save('projects', state.projects)
+    dbUpsert('projects', p)
     const newSpan = span.cloneNode(false)
     newSpan.textContent = val
     input.replaceWith(newSpan)
@@ -1067,14 +1187,16 @@ function saveConversation() {
   const err=document.getElementById('conv-error')
   if (!text){err.textContent='Cole o texto.';err.style.display='block';return}
   err.style.display='none'
-  const msg={id:STORE.uid(),project_id:projectId,content:text,requester_name:requester||null,created_at:new Date().toISOString()}
+  const msg={id:uid(),project_id:projectId,content:text,requester_name:requester||null,created_at:new Date().toISOString()}
   state.messages.push(msg)
+  dbUpsert('messages', msg)
   // extração automática de tarefas — cada linha com >15 chars vira uma tarefa
   const lines=text.split('\n').map(l=>l.trim()).filter(l=>l.length>15)
   lines.slice(0,20).forEach(line=>{
-    state.tasks.push({id:STORE.uid(),project_id:projectId,title:line.slice(0,160),status:'open',priority:'normal',due_at:null,start_at:null,description:null,created_at:new Date().toISOString()})
+    const task={id:uid(),project_id:projectId,title:line.slice(0,160),status:'open',priority:'normal',due_at:null,start_at:null,description:null,created_at:new Date().toISOString()}
+    state.tasks.push(task)
+    dbUpsert('tasks', task)
   })
-  STORE.save('messages',state.messages); STORE.save('tasks',state.tasks)
   document.getElementById('conv-text').value=''
   document.getElementById('conv-requester').value=''
   document.getElementById('conv-project').value=''
@@ -1083,7 +1205,6 @@ function saveConversation() {
 
 let editingConvId = null
 function openConvEdit(id) {
-  state = STORE.load()
   const m = state.messages.find(x => x.id === id); if (!m) return
   editingConvId = id
   document.getElementById('conv-edit-requester').value = m.requester_name || ''
@@ -1092,28 +1213,25 @@ function openConvEdit(id) {
 }
 
 function saveConvEdit() {
-  state = STORE.load()
   const m = state.messages.find(x => x.id === editingConvId); if (!m) return
   const text = document.getElementById('conv-edit-text').value.trim()
   if (!text) return
   m.content = text
   m.requester_name = document.getElementById('conv-edit-requester').value.trim() || null
-  STORE.save('messages', state.messages)
+  dbUpsert('messages', m)
   closeDialog('conv-edit')
-  renderProjectMessages()
+  renderProjectConversations()
 }
 
 function deleteConv(id) {
   if (!confirm('Excluir esta conversa?')) return
-  state = STORE.load()
   state.messages = state.messages.filter(m => m.id !== id)
-  STORE.save('messages', state.messages)
-  renderProjectMessages()
+  dbDelete('messages', id)
+  renderProjectConversations()
 }
 
 // ── TODAY ──
 function renderToday() {
-  state=STORE.load()
   const el=document.getElementById('today-content')
   const today=new Date();today.setHours(0,0,0,0)
   const todayEnd=new Date(today);todayEnd.setHours(23,59,59,999)
@@ -1169,7 +1287,6 @@ const CAL_MONTHS = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho
 const CAL_DOWS   = ['Seg','Ter','Qua','Qui','Sex','Sáb','Dom']
 
 function renderCalendar() {
-  state = STORE.load()
   const el = document.getElementById('calendar-content')
   el.innerHTML = buildCalendarHTML()
 }
@@ -1310,11 +1427,15 @@ function handleFileUpload(input) {
   files.forEach(file => {
     const reader = new FileReader()
     reader.onerror = () => { pending--; if(pending===0){renderProjectDocuments();updateDocsBadge()} }
-    reader.onload = e => {
-      const docs = JSON.parse(localStorage.getItem('axis_documents') || '[]')
-      docs.push({id:STORE.uid(),project_id:currentProjectId,name:file.name,type:file.type,size:file.size,data:e.target.result,created_at:new Date().toISOString()})
-      try { localStorage.setItem('axis_documents',JSON.stringify(docs)); state.documents=docs }
-      catch(err) { el.innerHTML='<div style="padding:20px;color:var(--danger);font-size:13px">Arquivo grande demais. Tente um menor (limite ~4MB total).</div>' }
+    reader.onload = async e => {
+      const doc = {id:uid(),project_id:currentProjectId,name:file.name,type:file.type,size:file.size,data:e.target.result,created_at:new Date().toISOString()}
+      state.documents.push(doc)
+      try {
+        await dbUpsert('documents', doc)
+      } catch(err) {
+        state.documents = state.documents.filter(d => d.id !== doc.id)
+        el.innerHTML='<div style="padding:20px;color:var(--danger);font-size:13px">Arquivo grande demais para sincronizar. Tente um menor.</div>'
+      }
       pending--; if(pending===0){renderProjectDocuments();updateDocsBadge()}
     }
     reader.readAsDataURL(file)
@@ -1324,7 +1445,6 @@ function handleFileUpload(input) {
 
 function renderProjectDocuments() {
   const el = document.getElementById('proj-docs-list')
-  state.documents = JSON.parse(localStorage.getItem('axis_documents') || '[]')
   const docs = state.documents.filter(d=>d.project_id===currentProjectId).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at))
   if (!docs.length) { el.innerHTML='<div class="empty-state">Nenhum documento ainda.<br><small>Faça upload de imagens, planilhas, PDFs…</small></div>'; return }
 
@@ -1432,7 +1552,7 @@ function closePreview(e) { if (e.target===e.currentTarget) document.getElementBy
 
 function deleteDoc(id) {
   state.documents = state.documents.filter(d=>d.id!==id)
-  localStorage.setItem('axis_documents', JSON.stringify(state.documents))
+  dbDelete('documents', id)
   renderProjectDocuments(); updateDocsBadge()
 }
 
@@ -1442,10 +1562,9 @@ function saveLink() {
   const err  = document.getElementById('link-error')
   if (!url) { err.textContent='Informe a URL.'; err.style.display='block'; return }
   err.style.display='none'
-  const docs = JSON.parse(localStorage.getItem('axis_documents') || '[]')
-  docs.push({id:STORE.uid(), project_id:currentProjectId, name:name||url, url:url, kind:'link', type:'link', size:0, data:null, created_at:new Date().toISOString()})
-  localStorage.setItem('axis_documents', JSON.stringify(docs))
-  state.documents = docs
+  const doc = {id:uid(), project_id:currentProjectId, name:name||url, url:url, kind:'link', type:'link', size:0, data:null, created_at:new Date().toISOString()}
+  state.documents.push(doc)
+  dbUpsert('documents', doc)
   document.getElementById('link-name').value = ''
   document.getElementById('link-url').value  = ''
   closeDialog('link')
@@ -1469,10 +1588,10 @@ function exportData() {
   const data = {
     version: 1,
     exported_at: new Date().toISOString(),
-    axis_projects:  JSON.parse(localStorage.getItem('axis_projects')  || '[]'),
-    axis_tasks:     JSON.parse(localStorage.getItem('axis_tasks')     || '[]'),
-    axis_messages:  JSON.parse(localStorage.getItem('axis_messages')  || '[]'),
-    axis_documents: JSON.parse(localStorage.getItem('axis_documents') || '[]'),
+    axis_projects:  state.projects,
+    axis_tasks:     state.tasks,
+    axis_messages:  state.messages,
+    axis_documents: state.documents,
   }
   const json = JSON.stringify(data, null, 2)
   const blob = new Blob([json], {type: 'application/json'})
@@ -1486,16 +1605,24 @@ function exportData() {
 function importData(input) {
   const file = input.files[0]; if (!file) return
   const reader = new FileReader()
-  reader.onload = e => {
+  reader.onload = async e => {
     try {
       const data = JSON.parse(e.target.result)
       if (!data.axis_projects && !data.axis_tasks) { alert('Arquivo inválido.'); return }
       if (!confirm(`Importar backup de ${data.exported_at?.slice(0,10) || 'data desconhecida'}?\n\nOs dados atuais serão substituídos.`)) return
-      if (data.axis_projects)  localStorage.setItem('axis_projects',  JSON.stringify(data.axis_projects))
-      if (data.axis_tasks)     localStorage.setItem('axis_tasks',     JSON.stringify(data.axis_tasks))
-      if (data.axis_messages)  localStorage.setItem('axis_messages',  JSON.stringify(data.axis_messages))
-      if (data.axis_documents) localStorage.setItem('axis_documents', JSON.stringify(data.axis_documents))
-      state = STORE.load()
+      const userId = currentUser?.id
+      if (!userId) { alert('Faça login primeiro.'); return }
+      const doUp = async (table, rows) => {
+        if (!rows?.length) return
+        await supa.from(table).upsert(rows.map(r => ({...r, user_id: userId})))
+      }
+      await doUp('projects',  data.axis_projects)
+      await doUp('tasks',     data.axis_tasks)
+      await doUp('messages',  data.axis_messages)
+      for (const doc of (data.axis_documents || [])) {
+        try { await supa.from('documents').upsert({...doc, user_id: userId}) } catch(e) {}
+      }
+      await loadAll()
       showScreen('dashboard'); renderDashboard()
       alert('Dados importados com sucesso!')
     } catch(err) { alert('Erro ao ler o arquivo. Verifique se é um backup válido.') }
@@ -1512,8 +1639,6 @@ document.addEventListener('keydown',e=>{
   if(e.key==='n'||e.key==='N')openDialog('conv')
   if(e.key==='Escape'){document.querySelectorAll('.dialog-overlay.open').forEach(d=>d.classList.remove('open'));document.getElementById('preview-overlay').classList.remove('open')}
 })
-
-init()
 </script>
 </body>
 </html>
