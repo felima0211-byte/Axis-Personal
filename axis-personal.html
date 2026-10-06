@@ -287,6 +287,17 @@ body.is-dragging .root-drop-zone{display:block}
       <div class="live-dot"></div>
       <span style="font-size:11px;color:var(--text-3)" class="mono">local</span>
     </div>
+    <div style="display:flex;gap:4px">
+      <button class="theme-toggle" style="flex:1" onclick="exportData()" title="Exportar todos os dados como backup">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8M5 7l3 3 3-3"/><rect x="2" y="11" width="12" height="3" rx="1"/></svg>
+        Exportar
+      </button>
+      <button class="theme-toggle" style="flex:1" onclick="document.getElementById('import-input').click()" title="Restaurar backup">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 14V6M5 9l3-3 3 3"/><rect x="2" y="2" width="12" height="3" rx="1"/></svg>
+        Importar
+      </button>
+      <input type="file" id="import-input" accept=".json" style="display:none" onchange="importData(this)">
+    </div>
     <button class="theme-toggle" onclick="toggleTheme()">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="4"/><line x1="8" y1="1" x2="8" y2="3"/><line x1="8" y1="13" x2="8" y2="15"/><line x1="1" y1="8" x2="3" y2="8"/><line x1="13" y1="8" x2="15" y2="8"/></svg>
       Alternar tema
@@ -1453,6 +1464,45 @@ function closeDialog(id){document.getElementById('dialog-'+id).classList.remove(
 function closeDialogIfBg(e,id){if(e.target===e.currentTarget)closeDialog(id)}
 function selectColor(el){document.querySelectorAll('#color-picker .color-dot').forEach(d=>d.classList.remove('selected'));el.classList.add('selected')}
 function toggleTheme(){document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'}
+
+function exportData() {
+  const data = {
+    version: 1,
+    exported_at: new Date().toISOString(),
+    axis_projects:  JSON.parse(localStorage.getItem('axis_projects')  || '[]'),
+    axis_tasks:     JSON.parse(localStorage.getItem('axis_tasks')     || '[]'),
+    axis_messages:  JSON.parse(localStorage.getItem('axis_messages')  || '[]'),
+    axis_documents: JSON.parse(localStorage.getItem('axis_documents') || '[]'),
+  }
+  const json = JSON.stringify(data, null, 2)
+  const blob = new Blob([json], {type: 'application/json'})
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  const date = new Date().toISOString().slice(0,10)
+  a.href = url; a.download = `axis-backup-${date}.json`
+  a.click(); URL.revokeObjectURL(url)
+}
+
+function importData(input) {
+  const file = input.files[0]; if (!file) return
+  const reader = new FileReader()
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result)
+      if (!data.axis_projects && !data.axis_tasks) { alert('Arquivo inválido.'); return }
+      if (!confirm(`Importar backup de ${data.exported_at?.slice(0,10) || 'data desconhecida'}?\n\nOs dados atuais serão substituídos.`)) return
+      if (data.axis_projects)  localStorage.setItem('axis_projects',  JSON.stringify(data.axis_projects))
+      if (data.axis_tasks)     localStorage.setItem('axis_tasks',     JSON.stringify(data.axis_tasks))
+      if (data.axis_messages)  localStorage.setItem('axis_messages',  JSON.stringify(data.axis_messages))
+      if (data.axis_documents) localStorage.setItem('axis_documents', JSON.stringify(data.axis_documents))
+      state = STORE.load()
+      showScreen('dashboard'); renderDashboard()
+      alert('Dados importados com sucesso!')
+    } catch(err) { alert('Erro ao ler o arquivo. Verifique se é um backup válido.') }
+  }
+  reader.readAsText(file)
+  input.value = ''
+}
 function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
 function fmtDate(iso){if(!iso)return'';const[y,m,d]=iso.slice(0,10).split('-');return`${d}/${m}/${y}`}
 function fmtDateTime(iso){if(!iso)return'';const d=new Date(iso);return`${fmtDate(iso)} ${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`}
