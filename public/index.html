@@ -540,14 +540,27 @@ body.is-dragging .root-drop-zone{display:block}
       <div style="font-size:10px;color:var(--text-3);font-family:monospace;letter-spacing:.04em">Personal</div>
     </div>
     <div id="login-form" style="width:100%;display:flex;flex-direction:column;gap:10px;margin-top:4px">
-      <input type="email" id="login-email" placeholder="seu@email.com" autocomplete="email"
+      <input type="email" id="login-email" placeholder="Email" autocomplete="email"
         style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;color:var(--text);font-size:14px;outline:none;width:100%"
-        onkeydown="if(event.key==='Enter')sendMagicLink()">
-      <button id="login-btn" onclick="sendMagicLink()"
+        onkeydown="if(event.key==='Enter')document.getElementById('login-password').focus()">
+      <input type="password" id="login-password" placeholder="Senha" autocomplete="current-password"
+        style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;color:var(--text);font-size:14px;outline:none;width:100%"
+        onkeydown="if(event.key==='Enter')doLogin()">
+      <button id="login-btn" onclick="doLogin()"
         style="padding:12px;border-radius:10px;background:var(--text);color:var(--bg);border:none;font-size:14px;font-weight:600;cursor:pointer;width:100%;transition:opacity 150ms">
-        Entrar com link mágico
+        Entrar
       </button>
       <div id="login-msg" style="font-size:12px;color:var(--text-3);text-align:center;display:none;line-height:1.5"></div>
+      <div id="login-signup-row" style="display:none;flex-direction:column;gap:8px;padding-top:4px;border-top:1px solid var(--border)">
+        <div style="font-size:12px;color:var(--text-3);text-align:center">Primeira vez? Crie sua conta:</div>
+        <input type="password" id="login-password2" placeholder="Confirmar senha" autocomplete="new-password"
+          style="background:var(--surface-2);border:1px solid var(--border);border-radius:10px;padding:12px 16px;color:var(--text);font-size:14px;outline:none;width:100%"
+          onkeydown="if(event.key==='Enter')doSignUp()">
+        <button onclick="doSignUp()"
+          style="padding:12px;border-radius:10px;background:transparent;color:var(--text);border:1px solid var(--border-strong);font-size:14px;font-weight:600;cursor:pointer;width:100%">
+          Criar conta
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -635,25 +648,55 @@ async function migrateLocalStorage() {
 }
 
 // ── AUTH ──
-async function sendMagicLink() {
-  const email = document.getElementById('login-email').value.trim()
-  const msg   = document.getElementById('login-msg')
-  const btn   = document.getElementById('login-btn')
-  if (!email) { msg.textContent='Informe seu email.'; msg.style.color='var(--danger)'; msg.style.display='block'; return }
-  btn.disabled = true; btn.textContent = 'Enviando…'; btn.style.opacity = '.6'
-  const { error } = await supa.auth.signInWithOtp({
-    email,
-    options: { emailRedirectTo: 'https://axispersonal01.vercel.app' }
-  })
-  btn.disabled = false; btn.textContent = 'Entrar com link mágico'; btn.style.opacity = '1'
-  if (error) {
-    msg.textContent = 'Erro: ' + error.message; msg.style.color = 'var(--danger)'
-  } else {
-    msg.textContent = '✓ Link enviado! Verifique seu email e clique no link para entrar.'
-    msg.style.color = 'var(--success)'
-    document.getElementById('login-email').disabled = true; btn.disabled = true; btn.style.opacity = '.4'
-  }
+function loginSetBusy(busy) {
+  const btn = document.getElementById('login-btn')
+  btn.disabled = busy; btn.style.opacity = busy ? '.5' : '1'
+  btn.textContent = busy ? 'Entrando…' : 'Entrar'
+}
+
+function loginShowMsg(text, isError) {
+  const msg = document.getElementById('login-msg')
+  msg.textContent = text
+  msg.style.color = isError ? 'var(--danger)' : 'var(--success)'
   msg.style.display = 'block'
+}
+
+async function doLogin() {
+  const email    = document.getElementById('login-email').value.trim()
+  const password = document.getElementById('login-password').value
+  if (!email || !password) { loginShowMsg('Preencha email e senha.', true); return }
+  loginSetBusy(true)
+  const { error } = await supa.auth.signInWithPassword({ email, password })
+  loginSetBusy(false)
+  if (error) {
+    if (error.message.includes('Invalid login credentials') || error.message.includes('invalid')) {
+      loginShowMsg('Email ou senha incorretos.', true)
+      // oferece criar conta se ainda não foi exibido
+      document.getElementById('login-signup-row').style.display = 'flex'
+    } else {
+      loginShowMsg('Erro: ' + error.message, true)
+    }
+  }
+  // se ok → onAuthStateChange cuida do resto
+}
+
+async function doSignUp() {
+  const email    = document.getElementById('login-email').value.trim()
+  const password = document.getElementById('login-password').value
+  const password2 = document.getElementById('login-password2').value
+  if (!email || !password) { loginShowMsg('Preencha email e senha.', true); return }
+  if (password !== password2) { loginShowMsg('As senhas não coincidem.', true); return }
+  if (password.length < 6)   { loginShowMsg('Senha mínima: 6 caracteres.', true); return }
+  const signupBtn = document.querySelector('#login-signup-row button')
+  signupBtn.disabled = true; signupBtn.textContent = 'Criando…'
+  const { error } = await supa.auth.signUp({ email, password })
+  signupBtn.disabled = false; signupBtn.textContent = 'Criar conta'
+  if (error) {
+    loginShowMsg('Erro: ' + error.message, true)
+  } else {
+    // tenta logar diretamente após criar
+    await supa.auth.signInWithPassword({ email, password })
+  }
 }
 
 async function signOut() {
@@ -676,10 +719,12 @@ supa.auth.onAuthStateChange(async (event, session) => {
     document.getElementById('sync-label').textContent = 'desconectado'
     document.getElementById('login-screen').style.display = 'flex'
     document.getElementById('login-email').disabled = false
+    document.getElementById('login-password').value = ''
     document.getElementById('login-btn').disabled = false
     document.getElementById('login-btn').style.opacity = '1'
-    document.getElementById('login-btn').textContent = 'Entrar com link mágico'
+    document.getElementById('login-btn').textContent = 'Entrar'
     document.getElementById('login-msg').style.display = 'none'
+    document.getElementById('login-signup-row').style.display = 'none'
   }
 })
 
