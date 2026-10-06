@@ -585,7 +585,7 @@ const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsI
 const supa = window.supabase.createClient(SUPA_URL, SUPA_KEY)
 
 let currentUser = null
-let state = { projects: [], tasks: [], messages: [], documents: [] }
+let state = { projects: [], tasks: [], messages: [], documents: [], logs: [] }
 let currentProjectId = null
 let currentFilter = 'active'
 
@@ -603,6 +603,13 @@ async function dbDelete(table, id) {
   if (error) console.error('[supa delete]', table, error.message)
 }
 
+async function dbLog(entityType, entityId, action, detail) {
+  if (!currentUser) return
+  const entry = { id: uid(), entity_type: entityType, entity_id: entityId, action, detail: detail || null, created_at: new Date().toISOString() }
+  state.logs.push(entry)
+  await dbUpsert('logs', entry)
+}
+
 async function loadAll() {
   if (!currentUser) return
   const userId = currentUser.id
@@ -616,6 +623,9 @@ async function loadAll() {
   state.tasks     = t.data || []
   state.messages  = m.data || []
   state.documents = d.data || []
+  // carregar logs (últimos 200)
+  const lg = await supa.from('logs').select('*').eq('user_id', userId).order('created_at', {ascending:false}).limit(200)
+  state.logs = lg.data || []
   // auto-migrate localStorage na primeira vez (Supabase vazio)
   if (!state.projects.length && !state.tasks.length) {
     await migrateLocalStorage()
@@ -1104,7 +1114,9 @@ function renderProjectConversations() {
 function toggleTask(id) {
   const task = state.tasks.find(t=>t.id===id); if(!task)return
   task.status = task.status==='done'?'open':'done'
+  task.updated_at = new Date().toISOString()
   dbUpsert('tasks', task)
+  dbLog('task', id, task.status==='done'?'concluída':'reaberta', task.title)
   const screen = document.querySelector('.screen.active')?.id
   if (screen==='screen-today') { renderToday(); updateTodayBanner(); return }
   const activeTab = document.querySelector('.tab-content.active')?.id
@@ -1117,9 +1129,12 @@ function addTaskInline() {
   const input = document.getElementById('new-task-input')
   const title = input.value.trim(); if(!title)return
   const prio = document.getElementById('new-task-prio').value||'normal'
-  const task = {id:uid(),project_id:currentProjectId,title,status:'confirmed',priority:prio,due_at:null,start_at:null,created_at:new Date().toISOString()}
+  const now = new Date().toISOString()
+  const task = {id:uid(),project_id:currentProjectId,title,status:'confirmed',priority:prio,due_at:null,start_at:null,created_at:now,updated_at:now}
   state.tasks.push(task)
-  dbUpsert('tasks', task); input.value=''
+  dbUpsert('tasks', task)
+  dbLog('task', task.id, 'criada', title)
+  input.value=''
   renderProjectTasks(); renderProjectOverview(); updateTodayBanner()
 }
 
@@ -1146,7 +1161,9 @@ function saveTaskEdit() {
   const dv = document.getElementById('edit-task-due').value
   task.due_at = dv ? new Date(dv+'T12:00:00').toISOString() : null
   task.priority = document.querySelector('.prio-opt.sel')?.dataset.prio||'normal'
+  task.updated_at = new Date().toISOString()
   dbUpsert('tasks', task)
+  dbLog('task', task.id, 'editada', task.title)
   closeDialog('task')
   const activeTab = document.querySelector('.tab-content.active')?.id
   if (activeTab==='tab-tasks') renderProjectTasks(); else renderProjectOverview()
@@ -1238,9 +1255,11 @@ function saveConversation() {
   // extração automática de tarefas — cada linha com >15 chars vira uma tarefa
   const lines=text.split('\n').map(l=>l.trim()).filter(l=>l.length>15)
   lines.slice(0,20).forEach(line=>{
-    const task={id:uid(),project_id:projectId,title:line.slice(0,160),status:'open',priority:'normal',due_at:null,start_at:null,description:null,created_at:new Date().toISOString()}
+    const now2=new Date().toISOString()
+    const task={id:uid(),project_id:projectId,title:line.slice(0,160),status:'open',priority:'normal',due_at:null,start_at:null,description:null,created_at:now2,updated_at:now2}
     state.tasks.push(task)
     dbUpsert('tasks', task)
+    dbLog('task', task.id, 'criada via conversa', task.title)
   })
   document.getElementById('conv-text').value=''
   document.getElementById('conv-requester').value=''
@@ -1276,12 +1295,29 @@ function deleteConv(id) {
 }
 
 // ── TODAY ──
+function fmtUpdatedAt(iso) {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const now = new Date()
+  const diffMs = now - d
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1)  return 'agora'
+  if (diffMin < 60) return `${diffMin}min atrás`
+  const sameDay = d.toDateString() === now.toDateString()
+  const hh = d.getHours().toString().padStart(2,'0')
+  const mm = d.getMinutes().toString().padStart(2,'0')
+  if (sameDay) return `${hh}:${mm}`
+  return `${fmtDate(iso)} ${hh}:${mm}`
+}
+
 function renderToday() {
   const el=document.getElementById('today-content')
   const today=new Date();today.setHours(0,0,0,0)
   const todayEnd=new Date(today);todayEnd.setHours(23,59,59,999)
   const allOpen=state.tasks.filter(t=>t.status!=='done'&&t.status!=='archived')
-  const overdue=allOpen.filter(t=>t.due_at&&new Date(t.due_at)<today)
+  // ordena por updated_at desc (mais recentemente modificada primeiro)
+  const sortByUpdated = arr => [...arr].sort((a,b)=>new Date(b.updated_at||b.created_at)-new Date(a.updated_at||a.created_at))
+  const overdue=sortByUpdated(allOpen.filter(t=>t.due_at&&new Date(t.due_at)<today))
   const overdueIds=new Set(overdue.map(t=>t.id))
   let html=''
   if (overdue.length) {
@@ -1292,9 +1328,10 @@ function renderToday() {
   const remaining=allOpen.filter(t=>!overdueIds.has(t.id))
   const byProject={}
   remaining.forEach(t=>{const k=t.project_id||'__none__';if(!byProject[k])byProject[k]=[];byProject[k].push(t)})
+  // ordena grupos pelo updated_at mais recente de qualquer tarefa do grupo
   const sorted=Object.entries(byProject).sort(([,a],[,b])=>{
-    const hasToday=ts=>ts.some(t=>t.due_at&&new Date(t.due_at)>=today&&new Date(t.due_at)<=todayEnd)
-    return hasToday(b)-hasToday(a)
+    const latestOf = ts => Math.max(...ts.map(t=>new Date(t.updated_at||t.created_at)))
+    return latestOf(b) - latestOf(a)
   })
   for (const [pid,pts] of sorted) {
     const proj=state.projects.find(p=>p.id===pid)
@@ -1303,7 +1340,7 @@ function renderToday() {
     const badge=tc>0?`<span style="font-size:10px;background:rgba(233,185,106,.2);color:var(--warning);padding:1px 6px;border-radius:99px;font-weight:700;margin-left:4px">${tc} hoje</span>`:''
     html+=`<div class="today-section">
       <div class="group-label"><div class="group-dot" style="background:${color}"></div>${esc(name)}${badge}</div>
-      <div>${pts.map(t=>taskSimpleHTML(t)).join('')}</div></div>`
+      <div>${sortByUpdated(pts).map(t=>taskSimpleHTML(t)).join('')}</div></div>`
   }
   if (!allOpen.length) html='<div class="empty-state">Nenhuma tarefa aberta. 🎉</div>'
   el.innerHTML=html
@@ -1313,7 +1350,8 @@ function taskSimpleHTML(task) {
   const isDone=task.status==='done'
   const prioClass={urgent:'prio-urgent',high:'prio-high',normal:'prio-normal',low:'prio-low'}[task.priority]||'prio-normal'
   const prioLabel={urgent:'urgente',high:'alta',normal:'normal',low:'baixa'}[task.priority]||''
-  const now=new Date().toISOString(); const isLate=task.due_at&&task.due_at<now&&!isDone
+  const nowIso=new Date().toISOString(); const isLate=task.due_at&&task.due_at<nowIso&&!isDone
+  const updatedLabel = fmtUpdatedAt(task.updated_at||task.created_at)
   return `<div class="task-item" onclick="openTaskEdit('${task.id}')">
     <div class="task-check ${isDone?'done':''}" onclick="event.stopPropagation();toggleTask('${task.id}')">${isDone?'✓':''}</div>
     <span class="task-title-text ${isDone?'done-text':''}">${esc(task.title)}</span>
@@ -1321,6 +1359,7 @@ function taskSimpleHTML(task) {
       ${task.due_at?`<span style="${isLate?'color:var(--danger)':''}">${fmtDate(task.due_at)}</span>`:''}
       ${daysLabel(task.due_at,isDone)}
       <span class="prio ${prioClass}">${prioLabel}</span>
+      <span style="margin-left:4px;opacity:.55;font-size:10px">${updatedLabel}</span>
     </div></div>`
 }
 

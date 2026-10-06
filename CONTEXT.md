@@ -142,6 +142,8 @@ Salvos com `kind:'link'`, `url:'...'`, `data:null`. Render checa `doc.kind==='li
 ## Histórico de commits recentes
 
 <!-- AUTO-UPDATED BELOW -->
+- `e675024` · 2026-10-06 11:19 — feat: trocar magic link por email+senha — login padrão com sessão persistente
+- `5af0811` · 2026-10-06 10:06 — feat: migrar persistência para Supabase — magic link auth + sync automático entre dispositivos
 - `a4a3bf3` · 2026-10-06 09:39 — feat: exportar e importar dados como backup JSON
 - `dc1213a` · 2026-10-05 13:51 — fix: remove strikethrough de tarefas concluídas, mantém check e cor apagada
 - `ff22eb8` · 2026-10-05 13:49 — feat: tarefas checkáveis na aba Hoje + clique na linha abre edição
