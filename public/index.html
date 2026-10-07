@@ -294,6 +294,10 @@ body.is-dragging .root-drop-zone{display:block}
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v8M5 7l3 3 3-3"/><rect x="2" y="11" width="12" height="3" rx="1"/></svg>
         Backup
       </button>
+      <button id="force-sync-btn" class="theme-toggle" style="flex:1" onclick="forceSyncFromLocalStorage()" title="Recuperar dados do navegador">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M13.5 8A5.5 5.5 0 1 1 8 2.5"/><polyline points="13.5,2.5 13.5,6 10,6"/></svg>
+        Sync local
+      </button>
       <button class="theme-toggle" style="flex:1" onclick="signOut()" title="Sair">
         <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M10 11l3-3-3-3M13 8H6"/></svg>
         Sair
@@ -617,13 +621,27 @@ function uid() { return Date.now().toString(36) + Math.random().toString(36).sli
 async function dbUpsert(table, row) {
   if (!currentUser) return
   const { error } = await supa.from(table).upsert({...row, user_id: currentUser.id})
-  if (error) console.error('[supa upsert]', table, error.message)
+  if (error) { showSyncError(table, error.message); console.error('[supa upsert]', table, error.message) }
 }
 
 async function dbDelete(table, id) {
   if (!currentUser) return
   const { error } = await supa.from(table).delete().eq('id', id)
-  if (error) console.error('[supa delete]', table, error.message)
+  if (error) { showSyncError(table, error.message); console.error('[supa delete]', table, error.message) }
+}
+
+function showSyncError(table, msg) {
+  let toast = document.getElementById('sync-toast')
+  if (!toast) {
+    toast = document.createElement('div')
+    toast.id = 'sync-toast'
+    toast.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#1a0a0a;border:1px solid var(--danger);color:var(--danger);font-size:12px;padding:10px 16px;border-radius:10px;z-index:999;max-width:320px;line-height:1.5;font-family:monospace'
+    document.body.appendChild(toast)
+  }
+  toast.innerHTML = `⚠ Erro ao salvar <strong>${table}</strong><br><span style="opacity:.7">${msg}</span><br><small style="opacity:.5">Verifique a conexão e tente novamente.</small>`
+  toast.style.display = 'block'
+  clearTimeout(toast._t)
+  toast._t = setTimeout(() => { toast.style.display = 'none' }, 8000)
 }
 
 async function dbLog(entityType, entityId, action, detail) {
@@ -662,22 +680,36 @@ async function migrateLocalStorage() {
   const lsD = JSON.parse(localStorage.getItem('axis_documents') || '[]')
   if (!lsP.length && !lsT.length) return
   const userId = currentUser.id
+  let ok = true
   const doUp = async (table, rows) => {
     if (!rows.length) return
     const { error } = await supa.from(table).upsert(rows.map(r => ({...r, user_id: userId})))
-    if (error) console.warn('migrate', table, error.message)
+    if (error) { ok = false; console.warn('migrate', table, error.message) }
   }
   await doUp('projects', lsP)
   await doUp('tasks', lsT)
   await doUp('messages', lsM)
-  // documentos podem ser grandes — migrar um a um
   for (const doc of lsD) {
-    try { await supa.from('documents').upsert({...doc, user_id: userId}) } catch(e) {}
+    const { error } = await supa.from('documents').upsert({...doc, user_id: userId})
+    if (error) console.warn('migrate doc', doc.name, error.message)
   }
   state.projects  = lsP
   state.tasks     = lsT
   state.messages  = lsM
   state.documents = lsD
+  if (ok) {
+    document.getElementById('sync-label').textContent = currentUser.email?.split('@')[0] + ' ✓'
+    setTimeout(() => { document.getElementById('sync-label').textContent = currentUser.email?.split('@')[0] }, 3000)
+  }
+}
+
+async function forceSyncFromLocalStorage() {
+  const btn = document.getElementById('force-sync-btn')
+  if (btn) { btn.disabled = true; btn.textContent = 'Sincronizando…' }
+  await migrateLocalStorage()
+  await loadAll()
+  renderDashboard()
+  if (btn) { btn.disabled = false; btn.textContent = '↻ Sync local' }
 }
 
 // ── AUTH ──
