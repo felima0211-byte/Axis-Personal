@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Axis Personal</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 :root[data-theme='dark']{
@@ -363,6 +364,17 @@ body.is-dragging .root-drop-zone{display:block}
       <div id="proj-tasks-list"></div>
     </div>
     <div id="tab-conversations" class="tab-content" style="gap:10px">
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-upload" onclick="openNewConvForProject()">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="2" x2="8" y2="14"/><line x1="2" y1="8" x2="14" y2="8"/></svg>
+          Nova conversa
+        </button>
+        <button class="btn-upload" onclick="document.getElementById('conv-img-upload').click()">
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="14" height="10" rx="2"/><circle cx="5.5" cy="7.5" r="1.5"/><polyline points="1,13 5,9 8,12 11,9 15,13"/></svg>
+          Processar imagem / print
+        </button>
+        <input type="file" id="conv-img-upload" accept="image/*" style="display:none" onchange="openConvFromImage(this)">
+      </div>
       <div id="proj-conv-list"></div>
     </div>
     <div id="tab-documents" class="tab-content" style="gap:16px">
@@ -413,9 +425,20 @@ body.is-dragging .root-drop-zone{display:block}
 <div class="dialog-overlay" id="dialog-conv" onclick="closeDialogIfBg(event,'conv')">
   <div class="dialog">
     <h3>Nova conversa</h3>
+    <div id="conv-ocr-area" style="border:1.5px dashed var(--border-strong);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <label style="cursor:pointer;display:inline-flex;align-items:center;gap:7px;padding:7px 12px;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:12px;color:var(--text-2);transition:background 120ms" for="conv-ocr-input" onmouseenter="this.style.background='var(--surface-3)'" onmouseleave="this.style.background='var(--surface-2)'">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="14" height="10" rx="2"/><circle cx="5.5" cy="7.5" r="1.5"/><polyline points="1,13 5,9 8,12 11,9 15,13"/></svg>
+          Carregar imagem / print
+        </label>
+        <input type="file" id="conv-ocr-input" accept="image/*" style="display:none" onchange="processConvImage(this)">
+        <span style="font-size:11px;color:var(--text-3)">ou cole o texto abaixo</span>
+      </div>
+      <div id="conv-ocr-status" style="display:none;font-size:12px;padding:8px 12px;border-radius:8px;background:var(--surface-2)"></div>
+    </div>
     <div>
-      <label>Cole o texto da conversa</label>
-      <textarea id="conv-text" rows="7" placeholder="Cole aqui o texto da conversa..."></textarea>
+      <label>Texto da conversa</label>
+      <textarea id="conv-text" rows="6" placeholder="Cole aqui ou carregue uma imagem para extrair o texto automaticamente…"></textarea>
     </div>
     <div style="display:flex;gap:10px">
       <div style="flex:1"><label>Solicitante</label><input type="text" id="conv-requester" placeholder="Nome"></div>
@@ -424,7 +447,7 @@ body.is-dragging .root-drop-zone{display:block}
     <div id="conv-error" class="field-error" style="display:none"></div>
     <div class="dialog-actions">
       <button class="btn-ghost" onclick="closeDialog('conv')">Cancelar</button>
-      <button class="btn-primary" onclick="saveConversation()">Salvar</button>
+      <button class="btn-primary" id="conv-save-btn" onclick="saveConversation()">Salvar</button>
     </div>
   </div>
 </div>
@@ -1235,8 +1258,64 @@ function startEditProjectName() {
   input.addEventListener('keydown', e => { if (e.key === 'Enter') input.blur(); if (e.key === 'Escape') { input.value = current; input.blur() } })
 }
 
+// ── OCR ──
+async function processConvImage(input) {
+  const file = input.files[0]; if (!file) return
+  input.value = ''
+  const status = document.getElementById('conv-ocr-status')
+  const saveBtn = document.getElementById('conv-save-btn')
+  status.style.display = 'block'
+  status.style.color = 'var(--text-2)'
+  status.textContent = '⏳ Extraindo texto da imagem…'
+  saveBtn.disabled = true; saveBtn.style.opacity = '.5'
+  try {
+    const result = await Tesseract.recognize(file, 'por+eng')
+    const text = result.data.text.trim()
+    if (!text) throw new Error('Nenhum texto encontrado na imagem.')
+    document.getElementById('conv-text').value = text
+    status.style.color = 'var(--success)'
+    status.textContent = `✓ Texto extraído (${text.split('\n').filter(l=>l.trim()).length} linhas). Revise e salve.`
+  } catch(e) {
+    status.style.color = 'var(--danger)'
+    status.textContent = '✕ Erro: ' + e.message
+  }
+  saveBtn.disabled = false; saveBtn.style.opacity = '1'
+}
+
+function openConvFromImage(input) {
+  // abre o dialog apontando para o projeto atual, depois processa a imagem
+  openNewConvForProject()
+  // pequeno delay para o dialog abrir antes de iniciar o OCR
+  setTimeout(() => {
+    // move o arquivo para o input dentro do dialog
+    const dialogInput = document.getElementById('conv-ocr-input')
+    // não é possível transferir FileList diretamente — cria um DataTransfer
+    try {
+      const dt = new DataTransfer()
+      Array.from(input.files).forEach(f => dt.items.add(f))
+      dialogInput.files = dt.files
+      processConvImage(dialogInput)
+    } catch(e) {
+      // fallback: abre o seletor de arquivo do dialog
+      dialogInput.click()
+    }
+    input.value = ''
+  }, 80)
+}
+
+function resetConvDialog() {
+  document.getElementById('conv-text').value = ''
+  document.getElementById('conv-requester').value = ''
+  document.getElementById('conv-ocr-status').style.display = 'none'
+  document.getElementById('conv-ocr-status').textContent = ''
+  document.getElementById('conv-error').style.display = 'none'
+  const saveBtn = document.getElementById('conv-save-btn')
+  saveBtn.disabled = false; saveBtn.style.opacity = '1'
+}
+
 // ── CONVERSATIONS ──
 function openNewConvForProject() {
+  resetConvDialog()
   populateProjectSelects()
   document.getElementById('conv-project').value = currentProjectId||''
   openDialog('conv')
@@ -1261,8 +1340,6 @@ function saveConversation() {
     dbUpsert('tasks', task)
     dbLog('task', task.id, 'criada via conversa', task.title)
   })
-  document.getElementById('conv-text').value=''
-  document.getElementById('conv-requester').value=''
   document.getElementById('conv-project').value=''
   closeDialog('conv'); renderDashboard()
 }
@@ -1663,7 +1740,7 @@ function updateDocsBadge() {
 
 // ── HELPERS ──
 function openDialog(id){if(id!=='task')populateProjectSelects();document.getElementById('dialog-'+id).classList.add('open')}
-function closeDialog(id){document.getElementById('dialog-'+id).classList.remove('open')}
+function closeDialog(id){document.getElementById('dialog-'+id).classList.remove('open');if(id==='conv')resetConvDialog()}
 function closeDialogIfBg(e,id){if(e.target===e.currentTarget)closeDialog(id)}
 function selectColor(el){document.querySelectorAll('#color-picker .color-dot').forEach(d=>d.classList.remove('selected'));el.classList.add('selected')}
 function toggleTheme(){document.documentElement.dataset.theme=document.documentElement.dataset.theme==='dark'?'light':'dark'}
