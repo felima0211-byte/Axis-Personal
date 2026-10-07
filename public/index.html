@@ -703,6 +703,22 @@ async function migrateLocalStorage() {
   }
 }
 
+async function testSupabaseWrite() {
+  const testId = uid()
+  const { error } = await supa.from('projects').insert({
+    id: testId, user_id: currentUser.id,
+    name: '__diag__', status: 'active', created_at: new Date().toISOString()
+  })
+  if (error) {
+    showSyncError('diagnóstico', error.message + ' [code:' + error.code + ']')
+    document.getElementById('sync-label').textContent = '⚠ erro DB'
+  } else {
+    await supa.from('projects').delete().eq('id', testId)
+    document.getElementById('sync-label').textContent = (currentUser.email?.split('@')[0] || 'eu') + ' ✓'
+    setTimeout(() => { document.getElementById('sync-label').textContent = currentUser.email?.split('@')[0] || 'eu' }, 3000)
+  }
+}
+
 async function forceSyncFromLocalStorage() {
   const btn = document.getElementById('force-sync-btn')
   if (btn) { btn.disabled = true; btn.textContent = 'Sincronizando…' }
@@ -777,6 +793,7 @@ supa.auth.onAuthStateChange(async (event, session) => {
       new Date().toLocaleDateString('pt-BR', {weekday:'long',day:'numeric',month:'long',year:'numeric'})
     const emailShort = currentUser.email?.split('@')[0] || 'eu'
     document.getElementById('sync-label').textContent = emailShort
+    await testSupabaseWrite()
     renderDashboard()
   } else {
     currentUser = null
