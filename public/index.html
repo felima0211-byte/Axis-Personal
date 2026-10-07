@@ -618,16 +618,45 @@ let currentFilter = 'active'
 
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2) }
 
+// ── LOCAL STORAGE BACKUP ──
+const LS_KEYS = { projects:'axis_projects', tasks:'axis_tasks', messages:'axis_messages', documents:'axis_documents' }
+
+function lsSave() {
+  try {
+    localStorage.setItem(LS_KEYS.projects,  JSON.stringify(state.projects))
+    localStorage.setItem(LS_KEYS.tasks,     JSON.stringify(state.tasks))
+    localStorage.setItem(LS_KEYS.messages,  JSON.stringify(state.messages))
+    // documentos base64 podem ser grandes — salvar sem o campo data para não saturar localStorage
+    const docsLight = state.documents.map(d => d.kind==='link' ? d : {...d, data: d.data ? '__blob__' : null})
+    localStorage.setItem(LS_KEYS.documents, JSON.stringify(docsLight))
+  } catch(e) { console.warn('lsSave error', e.message) }
+}
+
+function lsLoad() {
+  return {
+    projects:  JSON.parse(localStorage.getItem(LS_KEYS.projects)  || '[]'),
+    tasks:     JSON.parse(localStorage.getItem(LS_KEYS.tasks)     || '[]'),
+    messages:  JSON.parse(localStorage.getItem(LS_KEYS.messages)  || '[]'),
+    documents: JSON.parse(localStorage.getItem(LS_KEYS.documents) || '[]'),
+  }
+}
+
 async function dbUpsert(table, row) {
   if (!currentUser) return
   const { error } = await supa.from(table).upsert({...row, user_id: currentUser.id})
-  if (error) { showSyncError(table, error.message); console.error('[supa upsert]', table, error.message) }
+  if (error) {
+    showSyncError(table, error.message)
+    console.error('[supa upsert]', table, error.message)
+  }
 }
 
 async function dbDelete(table, id) {
   if (!currentUser) return
   const { error } = await supa.from(table).delete().eq('id', id)
-  if (error) { showSyncError(table, error.message); console.error('[supa delete]', table, error.message) }
+  if (error) {
+    showSyncError(table, error.message)
+    console.error('[supa delete]', table, error.message)
+  }
 }
 
 function showSyncError(table, msg) {
@@ -635,13 +664,14 @@ function showSyncError(table, msg) {
   if (!toast) {
     toast = document.createElement('div')
     toast.id = 'sync-toast'
-    toast.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#1a0a0a;border:1px solid var(--danger);color:var(--danger);font-size:12px;padding:10px 16px;border-radius:10px;z-index:999;max-width:320px;line-height:1.5;font-family:monospace'
+    toast.style.cssText = 'position:fixed;bottom:20px;right:20px;background:#1a0a0a;border:1px solid var(--danger);color:var(--danger);font-size:12px;padding:12px 16px;border-radius:10px;z-index:999;max-width:340px;line-height:1.6;font-family:monospace;cursor:pointer'
+    toast.title = 'Clique para fechar'
+    toast.onclick = () => { toast.style.display = 'none' }
     document.body.appendChild(toast)
   }
-  toast.innerHTML = `⚠ Erro ao salvar <strong>${table}</strong><br><span style="opacity:.7">${msg}</span><br><small style="opacity:.5">Verifique a conexão e tente novamente.</small>`
+  toast.innerHTML = `⚠ <strong>Erro ao salvar (${table})</strong><br><span style="opacity:.8;font-size:11px">${msg}</span><br><small style="opacity:.5">Dado salvo localmente. Clique para fechar.</small>`
   toast.style.display = 'block'
-  clearTimeout(toast._t)
-  toast._t = setTimeout(() => { toast.style.display = 'none' }, 8000)
+  // não auto-fecha — dado crítico, usuário precisa ver
 }
 
 async function dbLog(entityType, entityId, action, detail) {
@@ -660,16 +690,68 @@ async function loadAll() {
     supa.from('messages').select('*').eq('user_id', userId).order('created_at'),
     supa.from('documents').select('*').eq('user_id', userId).order('created_at'),
   ])
-  state.projects  = p.data || []
-  state.tasks     = t.data || []
-  state.messages  = m.data || []
-  state.documents = d.data || []
+
+  // se qualquer query falhou, exibe erro E usa localStorage como fallback
+  const hasError = p.error || t.error || m.error || d.error
+  if (hasError) {
+    const msg = [p.error, t.error, m.error, d.error].filter(Boolean).map(e=>e.message).join('; ')
+    showSyncError('loadAll', msg)
+    console.error('[loadAll] erro Supabase:', msg)
+    // carrega do localStorage para não perder o que estava na tela
+    const ls = lsLoad()
+    if (!state.projects.length) state.projects  = ls.projects
+    if (!state.tasks.length)    state.tasks     = ls.tasks
+    if (!state.messages.length) state.messages  = ls.messages
+    if (!state.documents.length)state.documents = ls.documents
+    return
+  }
+
+  // mescla Supabase com localStorage: Supabase tem precedência, mas itens
+  // que estão SOMENTE no localStorage (salvos offline) são incorporados
+  const ls = lsLoad()
+  const merge = (supaArr, lsArr) => {
+    const supaIds = new Set((supaArr||[]).map(x=>x.id))
+    const extras  = (lsArr||[]).filter(x => x.id && !supaIds.has(x.id))
+    return [...(supaArr||[]), ...extras]
+  }
+
+  state.projects  = merge(p.data, ls.projects)
+  state.tasks     = merge(t.data, ls.tasks)
+  state.messages  = merge(m.data, ls.messages)
+  // documentos: merge mas mantém data do localStorage (Supabase guarda sem data para itens grandes)
+  const supaDocsById = {}
+  ;(d.data||[]).forEach(x => { supaDocsById[x.id] = x })
+  const lsDocsById   = {}
+  ;(ls.documents||[]).forEach(x => { lsDocsById[x.id] = x })
+  const allDocIds = new Set([...Object.keys(supaDocsById), ...Object.keys(lsDocsById)])
+  state.documents = [...allDocIds].map(id => {
+    const sup = supaDocsById[id]
+    const loc = lsDocsById[id]
+    if (!sup) return loc
+    // se Supabase tem data nulo mas localStorage tem o base64, usa o localStorage
+    if (sup.data === null && loc?.data && loc.data !== '__blob__') return {...sup, data: loc.data}
+    return sup
+  }).filter(Boolean)
+
   // carregar logs (últimos 200)
   const lg = await supa.from('logs').select('*').eq('user_id', userId).order('created_at', {ascending:false}).limit(200)
   state.logs = lg.data || []
-  // auto-migrate localStorage na primeira vez (Supabase vazio)
-  if (!state.projects.length && !state.tasks.length) {
-    await migrateLocalStorage()
+
+  // sincroniza localStorage com o estado mesclado
+  lsSave()
+
+  // auto-migrate: itens extras do localStorage que não estão no Supabase → envia agora
+  const lsOnlyProjects  = ls.projects.filter(x => !p.data?.find(y=>y.id===x.id))
+  const lsOnlyTasks     = ls.tasks.filter(x    => !t.data?.find(y=>y.id===x.id))
+  const lsOnlyMessages  = ls.messages.filter(x => !m.data?.find(y=>y.id===x.id))
+  const lsOnlyDocs      = ls.documents.filter(x => !d.data?.find(y=>y.id===x.id))
+  if (lsOnlyProjects.length||lsOnlyTasks.length||lsOnlyMessages.length||lsOnlyDocs.length) {
+    console.log('[loadAll] itens offline para sincronizar:', lsOnlyProjects.length, lsOnlyTasks.length, lsOnlyMessages.length, lsOnlyDocs.length)
+    const up = (table, rows) => rows.length && supa.from(table).upsert(rows.map(r=>({...r,user_id:userId}))).then(({error})=>error&&console.warn('sync offline',table,error.message))
+    up('projects', lsOnlyProjects)
+    up('tasks', lsOnlyTasks)
+    up('messages', lsOnlyMessages)
+    lsOnlyDocs.forEach(doc => supa.from('documents').upsert({...doc,user_id:userId}).then(({error})=>error&&console.warn('sync offline doc',doc.name,error.message)))
   }
 }
 
@@ -855,7 +937,7 @@ function renderProjects() {
     rootZone.classList.remove('drag-over')
     if (src) {
       const proj = state.projects.find(x => x.id === src)
-      if (proj) { proj.parent_id = null; dbUpsert('projects', proj) }
+      if (proj) { proj.parent_id = null; lsSave(); dbUpsert('projects', proj) }
     }
     clearDragState(); renderDashboard()
   })
@@ -927,7 +1009,7 @@ function buildProjectCard(p, allChildren) {
     card.classList.remove('drag-over')
     if (src && src !== p.id && !isAncestor(src, p.id)) {
       const proj = state.projects.find(x => x.id === src)
-      if (proj) { proj.parent_id = p.id; dbUpsert('projects', proj) }
+      if (proj) { proj.parent_id = p.id; lsSave(); dbUpsert('projects', proj) }
     }
     clearDragState()
     renderDashboard()
@@ -1170,6 +1252,7 @@ function toggleTask(id) {
   const task = state.tasks.find(t=>t.id===id); if(!task)return
   task.status = task.status==='done'?'open':'done'
   task.updated_at = new Date().toISOString()
+  lsSave()
   dbUpsert('tasks', task)
   dbLog('task', id, task.status==='done'?'concluída':'reaberta', task.title)
   const screen = document.querySelector('.screen.active')?.id
@@ -1187,6 +1270,7 @@ function addTaskInline() {
   const now = new Date().toISOString()
   const task = {id:uid(),project_id:currentProjectId,title,status:'confirmed',priority:prio,due_at:null,start_at:null,created_at:now,updated_at:now}
   state.tasks.push(task)
+  lsSave()
   dbUpsert('tasks', task)
   dbLog('task', task.id, 'criada', title)
   input.value=''
@@ -1217,6 +1301,7 @@ function saveTaskEdit() {
   task.due_at = dv ? new Date(dv+'T12:00:00').toISOString() : null
   task.priority = document.querySelector('.prio-opt.sel')?.dataset.prio||'normal'
   task.updated_at = new Date().toISOString()
+  lsSave()
   dbUpsert('tasks', task)
   dbLog('task', task.id, 'editada', task.title)
   closeDialog('task')
@@ -1236,6 +1321,7 @@ function createProject() {
   const parentId = document.getElementById('proj-parent-select')?.value || null
   const proj = {id:uid(),name,description:desc,color,status:'active',parent_id:parentId||null,created_at:new Date().toISOString()}
   state.projects.push(proj)
+  lsSave()
   dbUpsert('projects', proj)
   document.getElementById('proj-name-input').value=''
   document.getElementById('proj-desc-input').value=''
@@ -1260,6 +1346,7 @@ async function deleteCurrentProject() {
   state.tasks     = state.tasks.filter(t=>t.project_id!==currentProjectId)
   state.messages  = state.messages.filter(m=>m.project_id!==currentProjectId)
   state.documents = state.documents.filter(d=>d.project_id!==currentProjectId)
+  lsSave()
   await dbDelete('projects', currentProjectId)
   for (const id of deletedTaskIds)  await dbDelete('tasks', id)
   for (const id of deletedMsgIds)   await dbDelete('messages', id)
@@ -1279,6 +1366,7 @@ function startEditProjectName() {
     const val = input.value.trim() || current
     const p = state.projects.find(x => x.id === currentProjectId); if (!p) return
     p.name = val
+    lsSave()
     dbUpsert('projects', p)
     const newSpan = span.cloneNode(false)
     newSpan.textContent = val
@@ -1362,6 +1450,7 @@ function saveConversation() {
   err.style.display='none'
   const msg={id:uid(),project_id:projectId,content:text,requester_name:requester||null,created_at:new Date().toISOString()}
   state.messages.push(msg)
+  lsSave()
   dbUpsert('messages', msg)
   // extração automática de tarefas — cada linha com >15 chars vira uma tarefa
   const lines=text.split('\n').map(l=>l.trim()).filter(l=>l.length>15)
@@ -1369,6 +1458,7 @@ function saveConversation() {
     const now2=new Date().toISOString()
     const task={id:uid(),project_id:projectId,title:line.slice(0,160),status:'open',priority:'normal',due_at:null,start_at:null,description:null,created_at:now2,updated_at:now2}
     state.tasks.push(task)
+    lsSave()
     dbUpsert('tasks', task)
     dbLog('task', task.id, 'criada via conversa', task.title)
   })
@@ -1391,6 +1481,7 @@ function saveConvEdit() {
   if (!text) return
   m.content = text
   m.requester_name = document.getElementById('conv-edit-requester').value.trim() || null
+  lsSave()
   dbUpsert('messages', m)
   closeDialog('conv-edit')
   renderProjectConversations()
@@ -1399,6 +1490,7 @@ function saveConvEdit() {
 function deleteConv(id) {
   if (!confirm('Excluir esta conversa?')) return
   state.messages = state.messages.filter(m => m.id !== id)
+  lsSave()
   dbDelete('messages', id)
   renderProjectConversations()
 }
@@ -1623,12 +1715,8 @@ function handleFileUpload(input) {
     reader.onload = async e => {
       const doc = {id:uid(),project_id:currentProjectId,name:file.name,type:file.type,size:file.size,data:e.target.result,created_at:new Date().toISOString()}
       state.documents.push(doc)
-      try {
-        await dbUpsert('documents', doc)
-      } catch(err) {
-        state.documents = state.documents.filter(d => d.id !== doc.id)
-        el.innerHTML='<div style="padding:20px;color:var(--danger);font-size:13px">Arquivo grande demais para sincronizar. Tente um menor.</div>'
-      }
+      lsSave()
+      await dbUpsert('documents', doc)
       pending--; if(pending===0){renderProjectDocuments();updateDocsBadge()}
     }
     reader.readAsDataURL(file)
@@ -1745,6 +1833,7 @@ function closePreview(e) { if (e.target===e.currentTarget) document.getElementBy
 
 function deleteDoc(id) {
   state.documents = state.documents.filter(d=>d.id!==id)
+  lsSave()
   dbDelete('documents', id)
   renderProjectDocuments(); updateDocsBadge()
 }
@@ -1757,6 +1846,7 @@ function saveLink() {
   err.style.display='none'
   const doc = {id:uid(), project_id:currentProjectId, name:name||url, url:url, kind:'link', type:'link', size:0, data:null, created_at:new Date().toISOString()}
   state.documents.push(doc)
+  lsSave()
   dbUpsert('documents', doc)
   document.getElementById('link-name').value = ''
   document.getElementById('link-url').value  = ''

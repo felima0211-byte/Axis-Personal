@@ -40,7 +40,7 @@ open -a Safari "https://axispersonal01.vercel.app"
 | Camada | Tecnologia |
 |--------|-----------|
 | UI | HTML + CSS custom properties (dark/light theme) |
-| Auth | Supabase Auth — magic link (passwordless) |
+| Auth | Supabase Auth — email + senha |
 | Estado | Supabase (PostgreSQL via RLS) + `state` em memória |
 | Build | Nenhum — arquivo único |
 | Deploy | Vercel → `public/index.html` como saída estática |
@@ -108,6 +108,7 @@ IDs gerados no cliente (`uid()` = `Date.now().toString(36) + random`), tipo `tex
 - [x] **Magic link auth** — login sem senha via email
 - [x] **Migração automática** — dados do localStorage migram para Supabase no primeiro login
 - [x] **Backup manual** — botão "Backup" exporta JSON com todos os dados
+- [x] **Dupla persistência** — toda mutação salva em localStorage E Supabase; loadAll mescla os dois; dado nunca é perdido
 
 ---
 
@@ -142,6 +143,13 @@ Salvos com `kind:'link'`, `url:'...'`, `data:null`. Render checa `doc.kind==='li
 ## Histórico de commits recentes
 
 <!-- AUTO-UPDATED BELOW -->
+- `pendente` · 2026-10-07 — fix: dupla persistência localStorage+Supabase; loadAll com merge e fallback; toast de erro persistente
+- `8ad742f` · 2026-10-07 12:08 — fix: conceder CRUD ao role authenticated em todas as tabelas (documents, logs, etc.)
+- `59486ec` · 2026-10-07 12:01 — fix: adicionar parent_id/start_at faltantes e corrigir check constraint de status em tasks
+- `2622db9` · 2026-10-07 11:45 — diag: testar escrita no Supabase ao logar e mostrar erro exato na tela
+- `a21e7bf` · 2026-10-07 11:29 — fix: corrigir id uuid→text no Supabase, erros de sync visíveis, botão Sync local
+- `95feeb8` · 2026-10-07 11:15 — feat: botão Nova Conversa na aba + OCR de imagem/print via Tesseract.js
+- `76a3aef` · 2026-10-06 11:25 — feat: Hoje ordenado por última modificação + timestamp + logs de mudança no Supabase
 - `e675024` · 2026-10-06 11:19 — feat: trocar magic link por email+senha — login padrão com sessão persistente
 - `5af0811` · 2026-10-06 10:06 — feat: migrar persistência para Supabase — magic link auth + sync automático entre dispositivos
 - `a4a3bf3` · 2026-10-06 09:39 — feat: exportar e importar dados como backup JSON
