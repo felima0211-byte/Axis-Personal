@@ -9,6 +9,7 @@
 **URL:** `https://axispersonal01.vercel.app`
 **Repo:** `https://github.com/felima0211-byte/Axis-Personal`
 **Deploy:** Vercel automático via push no `main`
+**Diretório local:** `/Users/Fe/laboratorio-produtos/axis-personal`
 
 ---
 
@@ -23,6 +24,7 @@ Dashboard pessoal single-owner. Um único arquivo HTML (`axis-personal.html`) de
 ## Como atualizar
 
 ```bash
+cd /Users/Fe/laboratorio-produtos/axis-personal
 # 1. Editar axis-personal.html
 # 2. Sincronizar
 cp axis-personal.html public/index.html
@@ -41,7 +43,7 @@ open -a Safari "https://axispersonal01.vercel.app"
 |--------|-----------|
 | UI | HTML + CSS custom properties (dark/light theme) |
 | Auth | Supabase Auth — email + senha |
-| Estado | Supabase (PostgreSQL via RLS) + `state` em memória |
+| Estado | Supabase (PostgreSQL via RLS) + `state` em memória + localStorage como backup |
 | Build | Nenhum — arquivo único |
 | Deploy | Vercel → `public/index.html` como saída estática |
 
@@ -53,25 +55,44 @@ open -a Safari "https://axispersonal01.vercel.app"
 | URL | `https://wulgdkszppwsnbihozwp.supabase.co` |
 | Região | `sa-east-1` |
 | CDN | `@supabase/supabase-js@2` via jsdelivr |
+| Auth user | `felima0211@gmail.com` / UUID `759cddd1-7a79-4ad3-8d57-7c953eba5190` |
 
 ### Tabelas (todas com RLS — policy: `auth.uid() = user_id`)
 
-| Tabela | Campos principais |
-|--------|------------------|
-| `projects` | id, user_id, name, description, color, status, parent_id, created_at |
-| `tasks` | id, user_id, project_id, title, description, status, priority, due_at, start_at, created_at |
-| `messages` | id, user_id, project_id, content, requester_name, created_at |
-| `documents` | id, user_id, project_id, name, type, size, data (base64), url, kind, created_at |
+| Tabela | Campos |
+|--------|--------|
+| `projects` | id (text), user_id (uuid), name, color, status, description, parent_id (text), created_at, updated_at |
+| `tasks` | id (text), user_id (uuid), project_id (text), title, description, status, priority, due_at, start_at, created_at, updated_at |
+| `messages` | id (text), user_id (uuid), project_id (text), content, requester_name, extraction_status (default 'pending'), created_at |
+| `documents` | id (text), user_id (uuid), project_id (text), name, type, size, data (base64 text), url, kind (default 'file'), created_at |
+| `logs` | id (text), user_id (uuid), entity_type, entity_id, action, detail, created_at |
+
+**GRANTS aplicados:** `GRANT SELECT, INSERT, UPDATE, DELETE ON public.<tabela> TO authenticated` — todas as 5 tabelas.
+
+### Constraints relevantes
+
+- `tasks.status`: `open, done, confirmed, active, archived, in_progress, draft`
+- `tasks.priority`: `low, normal, high, urgent`
+- `messages.extraction_status`: `pending, done, failed`
+- `projects.status`: `active, paused, completed, archived`
 
 ### Fluxo de dados
 
-- Auth via magic link → `supa.auth.onAuthStateChange` dispara `loadAll()` → `state` em memória
-- Toda mutação: atualiza `state` imediatamente (otimista) → `dbUpsert / dbDelete` em background
-- Primeiro login com Supabase vazio → migração automática do localStorage para o Supabase
+1. Login com email+senha → `supa.auth.onAuthStateChange` dispara `loadAll()`
+2. `loadAll()` busca Supabase + **mescla** com localStorage (itens offline são incorporados e enviados ao Supabase automaticamente)
+3. Toda mutação: atualiza `state` → **`lsSave()`** (localStorage imediato) → `dbUpsert/dbDelete` (Supabase background)
+4. Se Supabase falha: toast permanente (clique para fechar), dado está salvo no localStorage
+5. Na próxima carga: `loadAll` detecta itens só no localStorage e os sincroniza com Supabase
 
 ### IDs
 
-IDs gerados no cliente (`uid()` = `Date.now().toString(36) + random`), tipo `text` no Postgres.
+IDs gerados no cliente: `uid()` = `Date.now().toString(36) + Math.random().toString(36).slice(2)`, tipo `text` no Postgres.
+
+### Ordem de tarefas
+
+- Sort padrão: por `due_at` ASC (prazo mais próximo no topo; sem prazo vai para o final)
+- Drag-and-drop manual salva ordem customizada em `localStorage.axis_task_order_<projectId>` (array de ids)
+- Ordem manual tem precedência sobre sort por data
 
 ---
 
@@ -86,77 +107,89 @@ IDs gerados no cliente (`uid()` = `Date.now().toString(36) + random`), tipo `tex
 
 ## Funcionalidades implementadas
 
-- [x] Grid de projetos com cards clicáveis e badge "Novidade" 24h
-- [x] **Sub-projetos com hierarquia** — `parent_id` no modelo; sub-projetos listados dentro do card pai
-- [x] **Drag-and-drop** para mover projeto para dentro de outro (arraste o card sobre outro)
-- [x] **Zona "solte aqui"** aparece durante drag para remover projeto do pai (voltar à raiz)
-- [x] **+ Sub-projeto** no detalhe do projeto cria filho direto no contexto atual
+- [x] Grid de projetos com cards clicáveis
+- [x] **Sub-projetos** com hierarquia 1 nível (`parent_id`); sub-projetos listados no card pai
+- [x] **Drag-and-drop de projetos** — arrastar card sobre outro vira sub-projeto; zona "solte aqui" retorna à raiz
+- [x] **+ Sub-projeto** no detalhe cria filho direto
 - [x] Select "Projeto pai" no dialog de novo projeto
 - [x] Paleta de 16 cores ao criar projeto
 - [x] Título do projeto editável inline
 - [x] Detalhe do projeto com 4 tabs: Visão geral, Tarefas, Conversas, Documentos
-- [x] Tabela de tarefas com colunas: título, início, prazo, countdown chip, prioridade
-- [x] Edição de tarefa: título, descrição, data de início, prazo, prioridade
-- [x] Tela Hoje: tarefas abertas agrupadas por projeto com divisores suaves
+- [x] **Tabela de tarefas** — colunas: Tarefa, Início, Prazo, Tempo (verde >16d / amarelo 8-15d / vermelho ≤7d), Prioridade (MAIÚSCULA), ✕ excluir
+- [x] **Datas curtas** dd/mm/aa nas colunas da tabela
+- [x] **Sort por prazo** (mais próximo no topo); **drag-and-drop** para ordem manual
+- [x] **Ver mais / Ver menos** — máximo 6 itens por seção; funciona em Atrasadas, Abertas, Concluídas (Visão Geral) e na aba Tarefas
+- [x] **Excluir tarefa** — botão ✕ em cada linha (Visão Geral e aba Tarefas)
+- [x] Edição de tarefa: título, descrição, data início, prazo, prioridade
+- [x] Tela Hoje: tarefas abertas agrupadas por projeto, ordenadas por última modificação, com timestamp
 - [x] Calendário mensal com chips de tarefas por prazo, navegação ← →
 - [x] Upload de documentos com preview in-app, toggle galeria/lista
 - [x] Inserção de links em Documentos com ícone 🔗
 - [x] Conversas: inserção, edição, exclusão + extração automática de tarefas
+- [x] OCR de imagem/print via Tesseract.js (CDN v4) na aba Conversas
 - [x] Tema dark/light
 - [x] Ícone crystal na sidebar + background espacial
-- [x] **Supabase sync** — todos os dados sincronizam automaticamente entre dispositivos
-- [x] **Magic link auth** — login sem senha via email
-- [x] **Migração automática** — dados do localStorage migram para Supabase no primeiro login
+- [x] **Supabase sync** — dados sincronizam entre dispositivos
+- [x] **Auth email+senha** — login padrão sem magic link
+- [x] **Dupla persistência** — localStorage sempre atualizado; Supabase sync em background; merge automático no login
 - [x] **Backup manual** — botão "Backup" exporta JSON com todos os dados
-- [x] **Dupla persistência** — toda mutação salva em localStorage E Supabase; loadAll mescla os dois; dado nunca é perdido
+- [x] **Sync local** — botão na sidebar para forçar migração localStorage → Supabase
+- [x] Logs de mutações na tabela `logs`
 
 ---
 
 ## Decisões técnicas
 
-### Auth (magic link)
-Supabase `signInWithOtp({ email, options: { emailRedirectTo: 'https://axispersonal01.vercel.app' } })`. Sessão persiste automaticamente via localStorage do Supabase SDK. Funciona em qualquer dispositivo/browser após clicar no link do email.
+### Auth (email + senha)
+`supa.auth.signInWithPassword({ email, password })`. Sessão persiste via localStorage do SDK. `onAuthStateChange` é o único gatilho para carregar dados — nunca chamar `loadAll()` diretamente fora dele.
 
-### Sincronização (otimista)
-State em memória é atualizado imediatamente → `dbUpsert/dbDelete` salva em background. UI nunca trava esperando rede.
+### Dupla persistência (anti-perda-de-dados)
+Toda mutação: `state` → `lsSave()` (localStorage, imediato) → `dbUpsert/dbDelete` (Supabase, background). Se Supabase falha, dado está no localStorage. `loadAll` mescla os dois na próxima sessão.
 
-### Migração do localStorage
-Na primeira autenticação, se Supabase estiver vazio, os dados do localStorage são migrados automaticamente (sem perda). Documentos base64 grandes são migrados um a um com try/catch.
+### localStorage keys
+```js
+axis_projects, axis_tasks, axis_messages, axis_documents
+axis_task_order_<projectId>  // ordem customizada de tarefas por projeto
+```
+Documentos base64 grandes são salvos sem o campo `data` no localStorage (campo vira `__blob__`) para não saturar o storage; o base64 real fica só no Supabase.
 
-### Sub-projetos (hierarquia de 1 nível)
-Apenas projetos raiz (`parent_id === null`) aparecem no grid principal. Sub-projetos são listados compactamente dentro do card do pai. Nesting mais profundo não é suportado (proteção via `isAncestor()`).
+### Sub-projetos
+Apenas projetos raiz (`parent_id === null`) aparecem no grid principal. `isAncestor()` impede loops circulares no drag-and-drop.
 
-### Drag-and-drop
-HTML5 nativo — `draggable="true"` + eventos `dragstart/dragover/dragleave/drop`. `body.classList.add('is-dragging')` ativa a zona de drop para raiz. `isAncestor()` impede loops circulares.
+### Drag-and-drop de tarefas
+HTML5 nativo. `taskDragStart/taskDragOver/taskDrop/taskDragEnd` + `saveTaskOrder(projectId, ids)`. Ordem salva em localStorage por projeto.
+
+### Ver mais / Ver menos
+Constante `TASKS_PER_PAGE = 6`. Set `taskExpanded` rastreia quais seções estão expandidas. `toggleTaskSection(key)` e `toggleTaskSectionTab()` alternam e re-renderizam.
 
 ### Datas (timezone-safe)
 ```js
-const [y,m,d] = iso.slice(0,10).split('-')
+function fmtDateShort(iso) { const[y,m,d]=iso.slice(0,10).split('-'); return `${d}/${m}/${y.slice(2)}` }
 task.due_at = new Date(dv + 'T12:00:00').toISOString()
 ```
 
 ### Links em Documentos
 Salvos com `kind:'link'`, `url:'...'`, `data:null`. Render checa `doc.kind==='link'` para abrir em nova aba.
 
+### CDN scripts no `<head>`
+```html
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+```
+
 ---
 
 ## Histórico de commits recentes
 
 <!-- AUTO-UPDATED BELOW -->
-- `pendente` · 2026-10-07 — fix: dupla persistência localStorage+Supabase; loadAll com merge e fallback; toast de erro persistente
-- `8ad742f` · 2026-10-07 12:08 — fix: conceder CRUD ao role authenticated em todas as tabelas (documents, logs, etc.)
-- `59486ec` · 2026-10-07 12:01 — fix: adicionar parent_id/start_at faltantes e corrigir check constraint de status em tasks
-- `2622db9` · 2026-10-07 11:45 — diag: testar escrita no Supabase ao logar e mostrar erro exato na tela
-- `a21e7bf` · 2026-10-07 11:29 — fix: corrigir id uuid→text no Supabase, erros de sync visíveis, botão Sync local
-- `95feeb8` · 2026-10-07 11:15 — feat: botão Nova Conversa na aba + OCR de imagem/print via Tesseract.js
-- `76a3aef` · 2026-10-06 11:25 — feat: Hoje ordenado por última modificação + timestamp + logs de mudança no Supabase
-- `e675024` · 2026-10-06 11:19 — feat: trocar magic link por email+senha — login padrão com sessão persistente
-- `5af0811` · 2026-10-06 10:06 — feat: migrar persistência para Supabase — magic link auth + sync automático entre dispositivos
-- `a4a3bf3` · 2026-10-06 09:39 — feat: exportar e importar dados como backup JSON
-- `dc1213a` · 2026-10-05 13:51 — fix: remove strikethrough de tarefas concluídas, mantém check e cor apagada
-- `ff22eb8` · 2026-10-05 13:49 — feat: tarefas checkáveis na aba Hoje + clique na linha abre edição
-- `794e626` · 2026-10-05 06:20 — feat: sub-projetos como cards clicáveis na Visão Geral do projeto pai
-- `37b18ce` · 2026-10-05 06:17 — feat: sub-projetos aparecem na Visão Geral do projeto pai
-- `91567ed` · 2026-10-05 06:16 — fix: drag-and-drop com suporte correto ao Safari
-- `b349740` · 2026-10-05 06:14 — fix: botão + Sub-projeto funcional; remove drag-and-drop (não suportado no Safari)
-- `7682ba5` · 2026-10-05 06:10 — feat: sub-projetos com drag-and-drop e hierarquia pai/filho
+- `ab9ef15` · 2026-10-07 — feat: sem bordas verticais, sort por prazo, drag-and-drop tarefas, ver mais/menos (6/seção), prioridade maiúscula
+- `efa463d` · 2026-10-07 — feat: datas curtas dd/mm/aa, cores de tempo (verde/amarelo/vermelho), excluir tarefa
+- `1db17bb` · 2026-10-07 — fix: dupla persistência localStorage+Supabase; loadAll com merge e fallback; toast permanente
+- `8ad742f` · 2026-10-07 — fix: GRANT CRUD ao role authenticated em todas as tabelas
+- `59486ec` · 2026-10-07 — fix: parent_id/start_at faltantes; check constraint de status em tasks
+- `a21e7bf` · 2026-10-07 — fix: id uuid→text no Supabase; erros de sync visíveis; botão Sync local
+- `95feeb8` · 2026-10-07 — feat: Nova Conversa na aba + OCR via Tesseract.js
+- `76a3aef` · 2026-10-06 — feat: Hoje ordenado por última modificação + timestamp + logs
+- `e675024` · 2026-10-06 — feat: auth email+senha (substituiu magic link)
+- `5af0811` · 2026-10-06 — feat: migrar persistência para Supabase
+- `a4a3bf3` · 2026-10-06 — feat: exportar/importar backup JSON
